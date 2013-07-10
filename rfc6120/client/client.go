@@ -180,11 +180,6 @@ type IQ struct { // info/query
 	header
 
 	Error *Error `xml:"error"`
-	Bind  *struct {
-		XMLName  xml.Name `xml:"urn:ietf:params:xml:ns:xmpp-bind bind"`
-		Resource string   `xml:"resource"`
-		JID      string   `xml:"jid"`
-	} `xml:"bind"`
 	Query []byte `xml:",innerxml"`
 }
 
@@ -217,8 +212,6 @@ func (streamError) ID() string {
 func (streamError) IsError() bool {
 	return true
 }
-
-// END
 
 func (c *Connection) read() {
 	for {
@@ -273,12 +266,18 @@ func (c *Connection) getCookie() string {
 func (c *Connection) Bind() {
 	// TODO support binding to a user-specified resource
 	// TODO handle error cases
-	var bind struct {
+
+	ch, _ := c.SendIQ("", "set", struct {
 		XMLName xml.Name `xml:"urn:ietf:params:xml:ns:xmpp-bind bind"`
-	}
-	ch, _ := c.SendIQ("", "set", bind)
+	}{})
 	response := <-ch
-	c.JID = response.Bind.JID
+	var bind struct {
+		XMLName  xml.Name `xml:"urn:ietf:params:xml:ns:xmpp-bind bind"`
+		Resource string   `xml:"resource"`
+		JID      string   `xml:"jid"`
+	}
+	xml.Unmarshal(response.Query, &bind)
+	c.JID = bind.JID
 }
 
 func (c *Connection) Reset() {
