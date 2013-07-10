@@ -6,6 +6,7 @@ package client
 // TODO check namespaces everywhere
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/xml"
@@ -14,6 +15,16 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"net"
 	"strings"
+	"sync"
+)
+
+const (
+	nsStream  = "http://etherx.jabber.org/streams"
+	nsTLS     = "urn:ietf:params:xml:ns:xmpp-tls"
+	nsSASL    = "urn:ietf:params:xml:ns:xmpp-sasl"
+	nsBind    = "urn:ietf:params:xml:ns:xmpp-bind"
+	nsSession = "urn:ietf:params:xml:ns:xmpp-session"
+	nsClient  = "jabber:client"
 )
 
 var _ = spew.Dump
@@ -35,6 +46,7 @@ func findCompatibleMechanism(ours, theirs []string) string {
 
 type Connection struct {
 	net.Conn
+	sync.Mutex
 	User       string
 	Host       string
 	decoder    *xml.Decoder
@@ -42,6 +54,9 @@ type Connection struct {
 	Password   string
 	cookie     <-chan string
 	cookieQuit chan<- struct{}
+	JID        string
+	callbacks  map[string]chan *IQ
+	Stream     chan Stanza
 }
 
 func generateCookies(ch chan<- string, quit <-chan struct{}) {
@@ -79,6 +94,8 @@ connectLoop:
 					decoder:    xml.NewDecoder(c),
 					cookie:     cookieChan,
 					cookieQuit: cookieQuitChan,
+					callbacks:  make(map[string]chan *IQ),
+					Stream:     make(chan Stanza),
 				}
 
 				break connectLoop
@@ -104,13 +121,140 @@ connectLoop:
 			conn.SASL()
 			continue
 		}
-
-		if conn.Features.Requires("bind") {
-			conn.Bind()
-		}
 		break
 	}
+
+	go conn.read()
+	conn.Bind()
+
 	return conn, errors
+}
+
+type Stanza interface {
+	ID() string
+	IsError() bool
+}
+
+type header struct {
+	From string `xml:"from,attr"`
+	Id   string `xml:"id,attr"`
+	To   string `xml:"to,attr"`
+	Type string `xml:"type,attr"`
+}
+
+func (h header) ID() string {
+	return h.Id
+}
+
+func (header) IsError() bool {
+	return false
+}
+
+type Message struct {
+	XMLName xml.Name `xml:"jabber:client message"`
+	header
+
+	Subject string `xml:"subject"`
+	Body    string `xml:"body"`
+	Thread  string `xml:"thread"`
+}
+
+type Text struct {
+	Lang string `xml:"lang,attr"`
+	Body string `xml:",chardata"`
+}
+
+type Presence struct {
+	XMLName xml.Name `xml:"jabber:client presence"`
+	header
+
+	Lang string `xml:"lang,attr"`
+
+	Show     string `xml:"show"`
+	Status   string `xml:"status"`
+	Priority string `xml:"priority"`
+	Error    *Error `xml:"error"`
+}
+
+type IQ struct { // info/query
+	XMLName xml.Name `xml:"jabber:client iq"`
+	header
+
+	Error *Error `xml:"error"`
+	Bind  *struct {
+		XMLName  xml.Name `xml:"urn:ietf:params:xml:ns:xmpp-bind bind"`
+		Resource string   `xml:"resource"`
+		JID      string   `xml:"jid"`
+	} `xml:"bind"`
+	Query []byte `xml:",innerxml"`
+}
+
+type Error struct {
+	XMLName xml.Name `xml:"jabber:client error"`
+	Code    string   `xml:"code,attr"`
+	Type    string   `xml:"type,attr"`
+	Any     xml.Name `xml:",any"`
+	Text    string   `xml:"text"`
+}
+
+type streamError struct {
+	XMLName xml.Name `xml:"http://etherx.jabber.org/streams error"`
+	Any     xml.Name `xml:",any"`
+	Text    string   `xml:"text"`
+}
+
+func (Error) ID() string {
+	return ""
+}
+
+func (Error) IsError() bool {
+	return true
+}
+
+func (streamError) ID() string {
+	return ""
+}
+
+func (streamError) IsError() bool {
+	return true
+}
+
+// END
+
+func (c *Connection) read() {
+	for {
+		t, _ := c.NextStartElement()
+
+		var nv Stanza
+		switch t.Name.Space + " " + t.Name.Local {
+		case nsStream + " error":
+			nv = &streamError{}
+		case nsClient + " message":
+			nv = &Message{}
+		case nsClient + " presence":
+			nv = &Presence{}
+		case nsClient + " iq":
+			nv = &IQ{}
+		case nsClient + " error":
+			nv = &Error{}
+		default:
+			fmt.Println(t.Name.Local)
+			// TODO handle error
+		}
+
+		// Unmarshal into that storage.
+		c.decoder.DecodeElement(nv, t)
+		if iq, ok := nv.(*IQ); ok && (iq.Type == "result" || iq.Type == "error") {
+			c.Lock()
+			if ch, ok := c.callbacks[nv.ID()]; ok {
+				ch <- iq
+				delete(c.callbacks, nv.ID())
+			}
+		} else {
+			c.Stream <- nv
+		}
+		c.Unlock()
+	}
 }
 
 func (c *Connection) getCookie() string {
@@ -120,10 +264,12 @@ func (c *Connection) getCookie() string {
 func (c *Connection) Bind() {
 	// TODO support binding to a user-specified resource
 	// TODO handle error cases
-	// TODO put IQ sending into its own function
-	// TODO use channel callbacks
-	fmt.Fprintf(c, "<iq id='%s' type='set'><bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'/></iq>", c.getCookie())
-	c.NextStartElement()
+	var bind struct {
+		XMLName xml.Name `xml:"urn:ietf:params:xml:ns:xmpp-bind bind"`
+	}
+	ch, _ := c.SendIQ("", "set", bind)
+	response := <-ch
+	c.JID = response.Bind.JID
 }
 
 func (c *Connection) Reset() {
@@ -263,4 +409,45 @@ func (c *Connection) Close() {
 	// closing the stream MUST send a TLS close_notify alert and MUST
 	// receive a responding close_notify alert from the other party
 	// before terminating the underlying TCP connection"
+}
+
+var xmlSpecial = map[byte]string{
+	'<':  "&lt;",
+	'>':  "&gt;",
+	'"':  "&quot;",
+	'\'': "&apos;",
+	'&':  "&amp;",
+}
+
+func xmlEscape(s string) string {
+	var b bytes.Buffer
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if s, ok := xmlSpecial[c]; ok {
+			b.WriteString(s)
+		} else {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// TODO error handling
+func (c *Connection) SendIQ(to, typ string, value interface{}) (chan *IQ, string) {
+	cookie := c.getCookie()
+	reply := make(chan *IQ, 1)
+	c.Lock()
+	c.callbacks[cookie] = reply
+	c.Unlock()
+
+	toAttr := ""
+	if len(to) > 0 {
+		toAttr = "to='" + xmlEscape(to) + "'"
+	}
+
+	fmt.Fprintf(c, "<iq %s from='%s' type='%s' id='%s'>", toAttr, xmlEscape(c.JID), xmlEscape(typ), cookie)
+	xml.NewEncoder(c).Encode(value)
+	fmt.Fprintf(c, "</iq>")
+
+	return reply, cookie
 }
