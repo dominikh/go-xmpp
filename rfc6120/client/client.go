@@ -252,10 +252,10 @@ func (c *Connection) read() {
 				ch <- iq
 				delete(c.callbacks, nv.ID())
 			}
+			c.Unlock()
 		} else {
 			c.Stream <- nv
 		}
-		c.Unlock()
 	}
 }
 
