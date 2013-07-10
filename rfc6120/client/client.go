@@ -1,8 +1,6 @@
 package client
 
 // TODO make sure whitespace keepalive doesn't break our code
-// TODO read messages in a loop
-// TODO close connection on a </stream>
 // TODO check namespaces everywhere
 
 import (
@@ -57,6 +55,7 @@ type Connection struct {
 	JID        string
 	callbacks  map[string]chan *IQ
 	Stream     chan Stanza
+	Closing    bool
 }
 
 func generateCookies(ch chan<- string, quit <-chan struct{}) {
@@ -225,6 +224,16 @@ func (c *Connection) read() {
 	for {
 		t, _ := c.NextStartElement()
 
+		if t == nil {
+			close(c.Stream)
+			c.Lock()
+			for _, ch := range c.callbacks {
+				close(ch)
+			}
+			c.Close()
+			return
+		}
+
 		var nv Stanza
 		switch t.Name.Space + " " + t.Name.Local {
 		case nsStream + " error":
@@ -328,8 +337,13 @@ func (c *Connection) NextStartElement() (*xml.StartElement, error) {
 			return nil, err
 		}
 
-		if t, ok := t.(xml.StartElement); ok {
+		switch t := t.(type) {
+		case xml.StartElement:
 			return &t, nil
+		case xml.EndElement:
+			if t.Name.Local == "stream" && t.Name.Space == nsStream {
+				return nil, nil
+			}
 		}
 	}
 }
@@ -402,7 +416,14 @@ func (c *Connection) ReceiveStream() error {
 }
 
 func (c *Connection) Close() {
+	if c.Closing {
+		// Terminate TCP connection
+		c.Conn.Close()
+		return
+	}
+
 	fmt.Fprint(c, "</stream:stream>")
+	c.Closing = true
 	// TODO implement timeout for waiting on </stream> from other end
 
 	// TODO "to help prevent a truncation attack the party that is
