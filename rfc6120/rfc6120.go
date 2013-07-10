@@ -15,27 +15,33 @@ type Address struct {
 	Port int
 }
 
-// TODO consider not swallowing the error. It might be caused by e.g.
-// network issues, simply not returning any addresses would be
-// confusing to the user.
-
 // ResolveC2S resolves an FQDN to all IP+port pairs to attempt to
 // connect to for client-to-server connections.
-func ResolveC2S(host string) []Address {
+func ResolveC2S(host string) ([]Address, []error) {
 	return resolveFQDN(host, "xmpp-client")
 }
 
 // ResolveS2S resolves an FQDN to all IP+port pairs to attempt to
 // connect to for server-to-server connections.
-func ResolveS2S(host string) []Address {
+func ResolveS2S(host string) ([]Address, []error) {
 	return resolveFQDN(host, "xmpp-server")
 }
 
-func resolveFQDN(host, service string) []Address {
+func resolveFQDN(host, service string) ([]Address, []error) {
+	// First attempt using SRV. If that fails for any reason, attempt
+	// A/AAAA lookup. All errors will be recorded.
+	var errors []error
+
 	_, srvs, err := net.LookupSRV(service, "tcp", host)
 	if err != nil {
-		// TODO use fallback
-		ips := resolve(host)
+		errors = append(errors, err)
+
+		ips, err := resolve(host)
+		if err != nil {
+			errors = append(errors, err)
+			return nil, errors
+		}
+
 		var port int
 		switch service {
 		case "xmpp-client":
@@ -46,29 +52,32 @@ func resolveFQDN(host, service string) []Address {
 			panic("invalid service name")
 		}
 
-		return []Address{Address{ips, port}}
+		return []Address{Address{ips, port}}, errors
 	}
 
 	if len(srvs) == 1 && srvs[0].Target == "." {
-		return nil
+		return nil, nil
 	}
 
 	addresses := make([]Address, 0, len(srvs))
 	for _, srv := range srvs {
-		ips := resolve(srv.Target)
+		ips, err := resolve(srv.Target)
+		if err != nil {
+			errors = append(errors, err)
+		}
 		if len(ips) > 0 {
 			addresses = append(addresses, Address{ips, int(srv.Port)})
 		}
 	}
 
-	return addresses
+	return addresses, nil
 }
 
-func resolve(host string) []net.IP {
+func resolve(host string) ([]net.IP, error) {
 	ips, err := net.LookupIP(host)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
-	return ips
+	return ips, nil
 }
