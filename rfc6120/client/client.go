@@ -179,8 +179,9 @@ type IQ struct { // info/query
 	XMLName xml.Name `xml:"jabber:client iq"`
 	header
 
-	Error *Error `xml:"error"`
-	Query []byte `xml:",innerxml"`
+	Error *Error   `xml:"error"`
+	Query xml.Name `xml:"query"`
+	Inner []byte   `xml:",innerxml"`
 }
 
 type Error struct {
@@ -276,7 +277,8 @@ func (c *Connection) Bind() {
 		Resource string   `xml:"resource"`
 		JID      string   `xml:"jid"`
 	}
-	xml.Unmarshal(response.Query, &bind)
+
+	xml.Unmarshal(response.Inner, &bind)
 	c.JID = bind.JID
 }
 
