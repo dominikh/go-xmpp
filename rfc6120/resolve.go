@@ -10,19 +10,10 @@ type Address struct {
 	Port int
 }
 
-// ResolveC2S resolves an FQDN to all IP+port pairs to attempt to
-// connect to for client-to-server connections.
-func ResolveC2S(host string) ([]Address, []error) {
-	return resolveFQDN(host, "xmpp-client")
-}
-
-// ResolveS2S resolves an FQDN to all IP+port pairs to attempt to
-// connect to for server-to-server connections.
-func ResolveS2S(host string) ([]Address, []error) {
-	return resolveFQDN(host, "xmpp-server")
-}
-
-func resolveFQDN(host, service string) ([]Address, []error) {
+// ResolveFQDN resolves an FQDN to all IP+port pairs to attempt to
+// connect to. service must be either xmpp-client or xmpp-server, for
+// c2s or s2s connections respectively.
+func ResolveFQDN(host, service string) ([]Address, []error) {
 	// First attempt using SRV. If that fails for any reason, attempt
 	// A/AAAA lookup. All errors will be recorded.
 	var errors []error
