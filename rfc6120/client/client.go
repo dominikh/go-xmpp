@@ -167,12 +167,12 @@ type Presence struct {
 	XMLName xml.Name `xml:"jabber:client presence"`
 	Header
 
-	Lang string `xml:"lang,attr"`
+	Lang string `xml:"lang,attr,omitempty"`
 
-	Show     string `xml:"show"`
-	Status   string `xml:"status"`
-	Priority string `xml:"priority"`
-	Error    *Error `xml:"error"`
+	Show     string `xml:"show,omitempty"`
+	Status   string `xml:"status,omitempty"`
+	Priority string `xml:"priority,omitempty"`
+	Error    *Error `xml:"error,omitempty"`
 }
 
 type IQ struct { // info/query
@@ -486,4 +486,13 @@ func (c *Connection) SendIQReply(to, typ, id string, value interface{}) {
 	}
 	fmt.Fprintf(c, "</iq>")
 
+}
+
+func (c *Connection) SendPresence(p Presence) (cookie string, err error) {
+	// TODO do we need to store the cookie somewhere? present the user with a channel?
+	// TODO document that we set the ID
+	p.Id = c.getCookie()
+	xml.NewEncoder(c).Encode(p)
+	return p.Id, nil
+	// TODO handle error (both of NewEncoder and what the server will tell us)
 }

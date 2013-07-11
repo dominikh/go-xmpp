@@ -1,6 +1,7 @@
 package client
 
 // TODO implement roster versioning
+// TODO implement pre-approval
 
 import (
 	"encoding/xml"
@@ -24,8 +25,12 @@ func Wrap(c *client.Connection) *Connection {
 func (c *Connection) read() {
 	for stanza := range c.Connection.Stream {
 		spew.Dump(stanza)
+		// TODO maybe have a channel for Roster events (roster push)
+		// on which to send changes?
+
+		// TODO maybe have a channel for subscription requests?
 		if iq, ok := stanza.(*client.IQ); ok {
-			if iq.Query.Space == "jabber:iq:roster" {
+			if iq.Query.Space == "jabber:iq:roster" && iq.Type == "set" {
 				// TODO should we send this stanza back on the stream?
 				// After all the user might be interested in it?
 
@@ -57,9 +62,7 @@ func (c *Connection) GetRoster() Roster {
 	// TODO implement
 
 	ch, _ := c.SendIQ("", "get", rosterQuery{})
-	res := <-ch
-
-	spew.Dump(res)
+	<-ch
 
 	return nil
 }
@@ -82,4 +85,46 @@ func (c *Connection) RemoveFromRoster(jid string) error {
 	<-ch
 	return nil
 	// TODO handle error
+}
+
+func (c *Connection) Subscribe(jid string) (cookie string, err error) {
+	cookie, err = c.Connection.SendPresence(client.Presence{
+		Header: client.Header{
+			To:   jid,
+			Type: "subscribe",
+		},
+	})
+	return
+	// TODO handle error
+}
+
+func (c *Connection) Unsubscribe(jid string) (cookie string, err error) {
+	cookie, err = c.Connection.SendPresence(client.Presence{
+		Header: client.Header{
+			To:   jid,
+			Type: "unsubscribe",
+		},
+	})
+	return
+	// TODO handle error
+}
+
+func (c *Connection) ApproveSubscription(jid string) {
+	c.Connection.SendPresence(client.Presence{
+		Header: client.Header{
+			To:   jid,
+			Type: "subscribed",
+		},
+	})
+}
+
+func (c *Connection) DenySubscription(jid string) {
+	// TODO document that this can also be used to revoke an existing
+	// subscription
+	c.Connection.SendPresence(client.Presence{
+		Header: client.Header{
+			To:   jid,
+			Type: "unsubscribed",
+		},
+	})
 }
