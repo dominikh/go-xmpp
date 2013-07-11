@@ -473,3 +473,17 @@ func (c *Connection) SendIQ(to, typ string, value interface{}) (chan *IQ, string
 
 	return reply, cookie
 }
+
+func (c *Connection) SendIQReply(to, typ, id string, value interface{}) {
+	toAttr := ""
+	if len(to) > 0 {
+		toAttr = "to='" + xmlEscape(to) + "'"
+	}
+
+	fmt.Fprintf(c, "<iq %s from='%s' type='%s' id='%s'>", toAttr, xmlEscape(c.JID), xmlEscape(typ), id)
+	if value != nil {
+		xml.NewEncoder(c).Encode(value)
+	}
+	fmt.Fprintf(c, "</iq>")
+
+}
