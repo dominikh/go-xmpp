@@ -134,24 +134,24 @@ type Stanza interface {
 	IsError() bool
 }
 
-type header struct {
+type Header struct {
 	From string `xml:"from,attr"`
 	Id   string `xml:"id,attr"`
 	To   string `xml:"to,attr"`
 	Type string `xml:"type,attr"`
 }
 
-func (h header) ID() string {
+func (h Header) ID() string {
 	return h.Id
 }
 
-func (header) IsError() bool {
+func (Header) IsError() bool {
 	return false
 }
 
 type Message struct {
 	XMLName xml.Name `xml:"jabber:client message"`
-	header
+	Header
 
 	Subject string `xml:"subject"`
 	Body    string `xml:"body"`
@@ -165,7 +165,7 @@ type Text struct {
 
 type Presence struct {
 	XMLName xml.Name `xml:"jabber:client presence"`
-	header
+	Header
 
 	Lang string `xml:"lang,attr"`
 
@@ -177,7 +177,7 @@ type Presence struct {
 
 type IQ struct { // info/query
 	XMLName xml.Name `xml:"jabber:client iq"`
-	header
+	Header
 
 	Error *Error   `xml:"error"`
 	Query xml.Name `xml:"query"`
