@@ -2,6 +2,8 @@ package client
 
 // TODO implement roster versioning
 // TODO implement pre-approval
+// TODO handle a roster, that keeps track of presence, the contacts
+// who are in it, etc
 
 import (
 	"encoding/xml"
@@ -127,4 +129,26 @@ func (c *Connection) DenySubscription(jid string) {
 			Type: "unsubscribed",
 		},
 	})
+}
+
+func (c *Connection) SendPresence(p *client.Presence) {
+	var pp client.Presence
+	if p != nil {
+		pp = *p
+	}
+
+	xml.NewEncoder(c).Encode(pp)
+}
+
+func (c *Connection) BecomeUnavailable(p *client.Presence) {
+	var pp client.Presence
+	if p != nil {
+		pp = *p
+	}
+
+	pp.Type = "unavailable"
+	pp.Show = ""
+	pp.Priority = 0
+	// TODO can't be have one global xml encoder?
+	xml.NewEncoder(c).Encode(pp)
 }

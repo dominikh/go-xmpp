@@ -135,10 +135,10 @@ type Stanza interface {
 }
 
 type Header struct {
-	From string `xml:"from,attr"`
-	Id   string `xml:"id,attr"`
-	To   string `xml:"to,attr"`
-	Type string `xml:"type,attr"`
+	From string `xml:"from,attr,omitempty"`
+	Id   string `xml:"id,attr,omitempty"`
+	To   string `xml:"to,attr,omitempty"`
+	Type string `xml:"type,attr,omitempty"`
 }
 
 func (h Header) ID() string {
@@ -171,8 +171,9 @@ type Presence struct {
 
 	Show     string `xml:"show,omitempty"`
 	Status   string `xml:"status,omitempty"`
-	Priority string `xml:"priority,omitempty"`
+	Priority int    `xml:"priority,omitempty"`
 	Error    *Error `xml:"error,omitempty"`
+	// TODO support other tags inside the presence
 }
 
 type IQ struct { // info/query
