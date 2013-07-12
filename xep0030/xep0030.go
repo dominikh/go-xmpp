@@ -3,15 +3,63 @@ package xep0030
 import (
 	"encoding/xml"
 	"honnef.co/go/xmpp/rfc6120/client"
+	"sync"
 )
 
 type Connection struct {
 	client.Client
+	sync.RWMutex
+	stanzas    chan client.Stanza
+	identities []Identity
+	features   []Feature
 }
 
 // TODO reconsider the `Wrap` name
-func Wrap(c client.Client) Connection {
-	return Connection{c}
+func Wrap(c client.Client) *Connection {
+	conn := &Connection{
+		Client:  c,
+		stanzas: make(chan client.Stanza, 100),
+	}
+
+	conn.AddFeature(Feature{Var: "http://jabber.org/protocol/disco#info"})
+
+	c.SubscribeStanzas(conn.stanzas)
+
+	go conn.read()
+	return conn
+}
+
+func (c *Connection) AddIdentity(id Identity) {
+	c.Lock()
+	c.identities = append(c.identities, id)
+	c.Unlock()
+}
+
+func (c *Connection) AddFeature(f Feature) {
+	c.Lock()
+	c.features = append(c.features, f)
+	c.Unlock()
+}
+
+func (c *Connection) read() {
+	// TODO support queries for items/item nodes
+	for stanza := range c.stanzas {
+		if iq, ok := stanza.(*client.IQ); ok {
+			if iq.Query.Space == "http://jabber.org/protocol/disco#info" && iq.Type == "get" {
+				// TODO support queries targetted at nodes
+				c.RLock()
+				c.SendIQReply(iq.From, "result", iq.ID(), struct {
+					XMLName    xml.Name   `xml:"http://jabber.org/protocol/disco#info query"`
+					Identities []Identity `xml:"identity"`
+					Features   []Feature  `xml:"feature"`
+				}{
+					Identities: c.identities,
+					Features:   c.features,
+				})
+				c.RUnlock()
+			}
+		}
+	}
 }
 
 type Info struct {
@@ -40,12 +88,12 @@ type Item struct {
 }
 
 // FIXME return error
-func (c Connection) GetInfo(to string) Info {
+func (c *Connection) GetInfo(to string) Info {
 	return GetInfo(c, to)
 }
 
 // FIXME return error
-func (c Connection) GetInfoFromNode(to, node string) Info {
+func (c *Connection) GetInfoFromNode(to, node string) Info {
 	return GetInfoFromNode(c, to, node)
 }
 
@@ -77,11 +125,11 @@ func GetInfoFromNode(c client.Client, to, node string) Info {
 	return parseInfo(<-ch)
 }
 
-func (c Connection) GetItems(to string) Items {
+func (c *Connection) GetItems(to string) Items {
 	return GetItems(c, to)
 }
 
-func (c Connection) GetItemsFromNode(to, node string) Items {
+func (c *Connection) GetItemsFromNode(to, node string) Items {
 	return GetItemsFromNode(c, to, node)
 }
 

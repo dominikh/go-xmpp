@@ -514,6 +514,7 @@ func (c *Connection) SendIQ(to, typ string, value interface{}) (chan *IQ, string
 	return reply, cookie
 }
 
+// TODO get rid of to and id arguments, use IQ value instead
 func (c *Connection) SendIQReply(to, typ, id string, value interface{}) {
 	toAttr := ""
 	if len(to) > 0 {
