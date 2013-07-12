@@ -57,6 +57,8 @@ func Wrap(c *client.Connection) *Connection {
 	return conn
 }
 
+type AuthorizationRequest client.Presence
+
 func (c *Connection) read() {
 	for stanza := range c.stanzas {
 		// TODO way to subscribe to roster events (roster push, subscription requests, ...)
@@ -67,6 +69,10 @@ func (c *Connection) read() {
 				// Traditionally, a roster push included no 'from'
 				// address")
 				c.SendIQReply("", "result", stanza.ID(), nil)
+			}
+		case *client.Presence:
+			if t.Type == "subscribe" {
+				c.subscribers.send((*AuthorizationRequest)(t))
 			}
 		default:
 			// TODO track JID etc
