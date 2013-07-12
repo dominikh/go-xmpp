@@ -17,8 +17,33 @@ var _ = spew.Dump
 type Connection struct {
 	*client.Connection
 	stanzas            chan client.Stanza
+	messageSubscribers messageSubscribers
 }
 
+type messageSubscribers struct {
+	sync.RWMutex
+	chans []chan<- *client.Message
+}
+
+func (s *messageSubscribers) send(stanza *client.Message) {
+	s.RLock()
+	defer s.RUnlock()
+	for _, ch := range s.chans {
+		select {
+		case ch <- stanza:
+		default:
+		}
+	}
+}
+
+func (s *messageSubscribers) subscribe(ch chan<- *client.Message) {
+	s.Lock()
+	defer s.Unlock()
+	s.chans = append(s.chans, ch)
+}
+
+func (c *Connection) SubscribeMessages(ch chan<- *client.Message) {
+	c.messageSubscribers.subscribe(ch)
 }
 
 func Wrap(c *client.Connection) *Connection {
@@ -49,6 +74,10 @@ func (c *Connection) read() {
 				// address")
 				c.SendIQReply("", "result", stanza.ID(), nil)
 			}
+		case *client.Message:
+			// TODO track JID etc
+			// FIXME what if nobody is listening?
+			c.messageSubscribers.send(t)
 		}
 	}
 }
