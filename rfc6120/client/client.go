@@ -95,8 +95,7 @@ func generateCookies(ch chan<- string, quit <-chan struct{}) {
 	}
 }
 
-func Connect(user, host, password string) (conn *Connection, errors []error, ok bool) {
-	// var conn *Connection
+func Dial(user, host, password string) (conn *Connection, errors []error, ok bool) {
 	addrs, errors := Resolve(host)
 
 connectLoop:
