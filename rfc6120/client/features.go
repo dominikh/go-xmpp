@@ -121,5 +121,5 @@ func (c *Connection) ParseFeatures() {
 		}
 	}
 
-	c.Features = features
+	c.features = features
 }

@@ -15,7 +15,7 @@ import (
 var _ = spew.Dump
 
 type Connection struct {
-	*client.Connection
+	client.Client
 	stanzas     chan client.Stanza
 	subscribers subscribers
 }
@@ -47,10 +47,10 @@ func (c *Connection) SubscribeStanzas(ch chan<- client.Stanza) {
 	c.subscribers.subscribe(ch)
 }
 
-func Wrap(c *client.Connection) *Connection {
+func Wrap(c client.Client) *Connection {
 	conn := &Connection{
-		Connection: c,
-		stanzas:    make(chan client.Stanza, 100),
+		Client:  c,
+		stanzas: make(chan client.Stanza, 100),
 	}
 	go conn.read()
 	c.SubscribeStanzas(conn.stanzas)
@@ -125,7 +125,7 @@ func (c *Connection) RemoveFromRoster(jid string) error {
 }
 
 func (c *Connection) Subscribe(jid string) (cookie string, err error) {
-	cookie, err = c.Connection.SendPresence(client.Presence{
+	cookie, err = c.SendPresence(client.Presence{
 		Header: client.Header{
 			To:   jid,
 			Type: "subscribe",
@@ -136,7 +136,7 @@ func (c *Connection) Subscribe(jid string) (cookie string, err error) {
 }
 
 func (c *Connection) Unsubscribe(jid string) (cookie string, err error) {
-	cookie, err = c.Connection.SendPresence(client.Presence{
+	cookie, err = c.SendPresence(client.Presence{
 		Header: client.Header{
 			To:   jid,
 			Type: "unsubscribe",
@@ -147,7 +147,7 @@ func (c *Connection) Unsubscribe(jid string) (cookie string, err error) {
 }
 
 func (c *Connection) ApproveSubscription(jid string) {
-	c.Connection.SendPresence(client.Presence{
+	c.SendPresence(client.Presence{
 		Header: client.Header{
 			To:   jid,
 			Type: "subscribed",
@@ -158,7 +158,7 @@ func (c *Connection) ApproveSubscription(jid string) {
 func (c *Connection) DenySubscription(jid string) {
 	// TODO document that this can also be used to revoke an existing
 	// subscription
-	c.Connection.SendPresence(client.Presence{
+	c.SendPresence(client.Presence{
 		Header: client.Header{
 			To:   jid,
 			Type: "unsubscribed",
@@ -168,7 +168,7 @@ func (c *Connection) DenySubscription(jid string) {
 
 func (c *Connection) BecomeAvailable() {
 	// TODO document SendPresence (rfc6120) for more specific needs
-	c.Connection.SendPresence(client.Presence{})
+	c.SendPresence(client.Presence{})
 }
 
 func (c *Connection) BecomeUnavailable() {
@@ -187,7 +187,7 @@ func (c *Connection) SendMessage(typ, to, message string) {
 
 	m := client.Message{
 		Header: client.Header{
-			From: c.Connection.JID,
+			From: c.JID(),
 			To:   to,
 			Type: typ,
 		},

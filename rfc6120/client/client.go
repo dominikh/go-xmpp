@@ -40,6 +40,7 @@ type Client interface {
 	SendIQReply(to, typ, id string, value interface{})
 	SendPresence(p Presence) (cookie string, err error)
 	SubscribeStanzas(ch chan<- Stanza)
+	JID() string
 	Close()
 }
 
@@ -81,16 +82,16 @@ func (s *subscribers) subscribe(ch chan<- Stanza) {
 type Connection struct {
 	net.Conn
 	sync.Mutex
-	User       string
-	Host       string
+	user       string
+	host       string
 	decoder    *xml.Decoder
-	Features   Features
-	Password   string
+	features   Features
+	password   string
 	cookie     <-chan string
 	cookieQuit chan<- struct{}
-	JID        string
+	jid        string
 	callbacks  map[string]chan *IQ
-	Closing    bool
+	closing    bool
 	// TODO reconsider choice of structure when we allow unsubscribing
 	subscribers subscribers
 }
@@ -123,9 +124,9 @@ connectLoop:
 				go generateCookies(cookieChan, cookieQuitChan)
 				conn = &Connection{
 					Conn:       c,
-					User:       user,
-					Password:   password,
-					Host:       host,
+					user:       user,
+					password:   password,
+					host:       host,
 					decoder:    xml.NewDecoder(c),
 					cookie:     cookieChan,
 					cookieQuit: cookieQuitChan,
@@ -146,12 +147,12 @@ connectLoop:
 		conn.openStream()
 		conn.receiveStream()
 		conn.ParseFeatures()
-		if conn.Features.Includes("starttls") {
+		if conn.features.Includes("starttls") {
 			conn.startTLS() // TODO handle error
 			continue
 		}
 
-		if conn.Features.Requires("sasl") {
+		if conn.features.Requires("sasl") {
 			conn.sasl()
 			continue
 		}
@@ -250,6 +251,10 @@ func (streamError) IsError() bool {
 	return true
 }
 
+func (c *Connection) JID() string {
+	return c.jid
+}
+
 func (c *Connection) read() {
 	for {
 		t, _ := c.nextStartElement()
@@ -314,16 +319,16 @@ func (c *Connection) bind() {
 	}
 
 	xml.Unmarshal(response.Inner, &bind)
-	c.JID = bind.JID
+	c.jid = bind.JID
 }
 
 func (c *Connection) reset() {
 	c.decoder = xml.NewDecoder(c.Conn)
-	c.Features = nil
+	c.features = nil
 }
 
 func (c *Connection) sasl() {
-	payload := fmt.Sprintf("\x00%s\x00%s", c.User, c.Password)
+	payload := fmt.Sprintf("\x00%s\x00%s", c.user, c.password)
 	payloadb64 := base64.StdEncoding.EncodeToString([]byte(payload))
 	fmt.Fprintf(c, "<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>%s</auth>", payloadb64)
 	t, _ := c.nextStartElement() // FIXME error handling
@@ -354,7 +359,7 @@ func (c *Connection) startTLS() error {
 		return errors.New("xmpp: failed to verify TLS certificate") // FIXME
 	}
 
-	if err := tlsConn.VerifyHostname(c.Host); err != nil {
+	if err := tlsConn.VerifyHostname(c.host); err != nil {
 		return errors.New("xmpp: failed to match TLS certificate to name: " + err.Error()) // FIXME
 	}
 
@@ -401,7 +406,7 @@ func (c *Connection) openStream() {
 	// TODO consider not including the JID if the connection isn't encrypted yet
 	// TODO configurable xml:lang
 	fmt.Fprintf(c, "<?xml version='1.0' encoding='UTF-8'?><stream:stream from='%s@%s' to='%s' version='1.0' xml:lang='en' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>",
-		c.User, c.Host, c.Host)
+		c.user, c.host, c.host)
 }
 
 type UnsupportedVersion struct {
@@ -452,14 +457,14 @@ func (c *Connection) receiveStream() error {
 }
 
 func (c *Connection) Close() {
-	if c.Closing {
+	if c.closing {
 		// Terminate TCP connection
 		c.Conn.Close()
 		return
 	}
 
 	fmt.Fprint(c, "</stream:stream>")
-	c.Closing = true
+	c.closing = true
 	// TODO implement timeout for waiting on </stream> from other end
 
 	// TODO "to help prevent a truncation attack the party that is
@@ -502,7 +507,7 @@ func (c *Connection) SendIQ(to, typ string, value interface{}) (chan *IQ, string
 		toAttr = "to='" + xmlEscape(to) + "'"
 	}
 
-	fmt.Fprintf(c, "<iq %s from='%s' type='%s' id='%s'>", toAttr, xmlEscape(c.JID), xmlEscape(typ), cookie)
+	fmt.Fprintf(c, "<iq %s from='%s' type='%s' id='%s'>", toAttr, xmlEscape(c.jid), xmlEscape(typ), cookie)
 	xml.NewEncoder(c).Encode(value)
 	fmt.Fprintf(c, "</iq>")
 
@@ -515,7 +520,7 @@ func (c *Connection) SendIQReply(to, typ, id string, value interface{}) {
 		toAttr = "to='" + xmlEscape(to) + "'"
 	}
 
-	fmt.Fprintf(c, "<iq %s from='%s' type='%s' id='%s'>", toAttr, xmlEscape(c.JID), xmlEscape(typ), id)
+	fmt.Fprintf(c, "<iq %s from='%s' type='%s' id='%s'>", toAttr, xmlEscape(c.jid), xmlEscape(typ), id)
 	if value != nil {
 		xml.NewEncoder(c).Encode(value)
 	}
