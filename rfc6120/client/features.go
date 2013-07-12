@@ -81,11 +81,11 @@ func (fs Features) RequiresTLS() bool {
 func (c *Connection) ParseFeatures() {
 	features := make(Features)
 
-	c.NextStartElement() // FIXME flow. this skips over the stream
+	c.nextStartElement() // FIXME flow. this skips over the stream
 	// t, _ := c.NextStartElement() // FIXME error handling
 	for {
 		// TODO handle not getting to the end of the features (connection timeout?)
-		t, _ := c.NextToken() // FIXME error handling
+		t, _ := c.nextToken() // FIXME error handling
 		if t, ok := t.(xml.StartElement); ok {
 			// FIXME namespace
 			switch t.Name.Local {

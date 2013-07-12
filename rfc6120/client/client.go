@@ -133,23 +133,23 @@ connectLoop:
 
 	// TODO error handling
 	for {
-		conn.OpenStream()
-		conn.ReceiveStream()
+		conn.openStream()
+		conn.receiveStream()
 		conn.ParseFeatures()
 		if conn.Features.Includes("starttls") {
-			conn.StartTLS() // TODO handle error
+			conn.startTLS() // TODO handle error
 			continue
 		}
 
 		if conn.Features.Requires("sasl") {
-			conn.SASL()
+			conn.sasl()
 			continue
 		}
 		break
 	}
 
 	go conn.read()
-	conn.Bind()
+	conn.bind()
 
 	return conn, errors, true
 }
@@ -242,7 +242,7 @@ func (streamError) IsError() bool {
 
 func (c *Connection) read() {
 	for {
-		t, _ := c.NextStartElement()
+		t, _ := c.nextStartElement()
 
 		if t == nil {
 			c.Lock()
@@ -289,7 +289,7 @@ func (c *Connection) getCookie() string {
 	return <-c.cookie
 }
 
-func (c *Connection) Bind() {
+func (c *Connection) bind() {
 	// TODO support binding to a user-specified resource
 	// TODO handle error cases
 
@@ -307,18 +307,18 @@ func (c *Connection) Bind() {
 	c.JID = bind.JID
 }
 
-func (c *Connection) Reset() {
+func (c *Connection) reset() {
 	c.decoder = xml.NewDecoder(c.Conn)
 	c.Features = nil
 }
 
-func (c *Connection) SASL() {
+func (c *Connection) sasl() {
 	payload := fmt.Sprintf("\x00%s\x00%s", c.User, c.Password)
 	payloadb64 := base64.StdEncoding.EncodeToString([]byte(payload))
 	fmt.Fprintf(c, "<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>%s</auth>", payloadb64)
-	t, _ := c.NextStartElement() // FIXME error handling
+	t, _ := c.nextStartElement() // FIXME error handling
 	if t.Name.Local == "success" {
-		c.Reset()
+		c.reset()
 	} else {
 		// TODO handle the error case
 	}
@@ -326,9 +326,9 @@ func (c *Connection) SASL() {
 	// TODO actually determine which mechanism we can use, use interfaces etc to call it
 }
 
-func (c *Connection) StartTLS() error {
+func (c *Connection) startTLS() error {
 	fmt.Fprint(c, "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>")
-	t, _ := c.NextStartElement() // FIXME error handling
+	t, _ := c.nextStartElement() // FIXME error handling
 	if t.Name.Local != "proceed" {
 		// TODO handle this. this should be <failure>, and the server
 		// will close the connection on us.
@@ -349,14 +349,14 @@ func (c *Connection) StartTLS() error {
 	}
 
 	c.Conn = tlsConn
-	c.Reset()
+	c.reset()
 
 	return nil
 }
 
 // TODO Move this outside of client. This function will be used by
 // servers, too.
-func (c *Connection) NextStartElement() (*xml.StartElement, error) {
+func (c *Connection) nextStartElement() (*xml.StartElement, error) {
 	for {
 		t, err := c.decoder.Token()
 		if err != nil {
@@ -374,7 +374,7 @@ func (c *Connection) NextStartElement() (*xml.StartElement, error) {
 	}
 }
 
-func (c *Connection) NextToken() (xml.Token, error) {
+func (c *Connection) nextToken() (xml.Token, error) {
 	return c.decoder.Token()
 }
 
@@ -387,7 +387,7 @@ func (e UnexpectedMessage) Error() string {
 }
 
 // TODO return error of Fprintf
-func (c *Connection) OpenStream() {
+func (c *Connection) openStream() {
 	// TODO consider not including the JID if the connection isn't encrypted yet
 	// TODO configurable xml:lang
 	fmt.Fprintf(c, "<?xml version='1.0' encoding='UTF-8'?><stream:stream from='%s@%s' to='%s' version='1.0' xml:lang='en' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>",
@@ -402,8 +402,8 @@ func (e UnsupportedVersion) Error() string {
 	return "Unsupported XMPP version: " + e.Version
 }
 
-func (c *Connection) ReceiveStream() error {
-	t, err := c.NextStartElement() // TODO error handling
+func (c *Connection) receiveStream() error {
+	t, err := c.nextStartElement() // TODO error handling
 	if err != nil {
 		return err
 	}
