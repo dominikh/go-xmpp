@@ -14,7 +14,7 @@ func Wrap(c client.Client) Connection {
 	return Connection{c}
 }
 
-type Result struct {
+type Info struct {
 	Identities []Identity `xml:"identity"`
 	Features   []Feature  `xml:"feature"`
 }
@@ -30,18 +30,18 @@ type Feature struct {
 }
 
 // FIXME return error
-func (c Connection) Query(to string) Result {
-	return Query(c, to)
+func (c Connection) GetInfo(to string) Info {
+	return GetInfo(c, to)
 }
 
 // FIXME return error
-func (c Connection) QueryNode(to, node string) Result {
-	return QueryNode(c, to, node)
+func (c Connection) GetInfoFromNode(to, node string) Info {
+	return GetInfoFromNode(c, to, node)
 }
 
 // FIXME return error
-func parseQueryResult(s *client.IQ) Result {
-	var result Result
+func parseInfo(s *client.IQ) Info {
+	var result Info
 	// FIXME handle error
 	xml.Unmarshal(s.Inner, &result)
 
@@ -49,20 +49,20 @@ func parseQueryResult(s *client.IQ) Result {
 }
 
 // FIXME return error
-func Query(c client.Client, to string) Result {
+func GetInfo(c client.Client, to string) Info {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#info query"`
 	}{})
 
-	return parseQueryResult(<-ch)
+	return parseInfo(<-ch)
 }
 
 // FIXME return error
-func QueryNode(c client.Client, to, node string) Result {
+func GetInfoFromNode(c client.Client, to, node string) Info {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#info query"`
 		Node    string   `xml:"node,attr"`
 	}{Node: node})
 
-	return parseQueryResult(<-ch)
+	return parseInfo(<-ch)
 }
