@@ -14,7 +14,22 @@ import (
 
 var _ = spew.Dump
 
-type Connection struct {
+type Client interface {
+	client.Client
+	GetRoster() Roster
+	AddToRoster(item RosterItem) error
+	RemoveFromRoster(jid string) error
+	Subscribe(jid string) (cookie string, err error)
+	Unsubscribe(jid string) (cookie string, err error)
+	ApproveSubscription(jid string)
+	DenySubscription(jid string)
+	BecomeAvailable()
+	BecomeUnavailable()
+	SendMessage(typ, to, message string)
+	Reply(orig *client.Message, reply string)
+}
+
+type connection struct {
 	client.Client
 	stanzas     chan client.Stanza
 	subscribers subscribers
@@ -43,12 +58,12 @@ func (s *subscribers) subscribe(ch chan<- client.Stanza) {
 	s.chans = append(s.chans, ch)
 }
 
-func (c *Connection) SubscribeStanzas(ch chan<- client.Stanza) {
+func (c *connection) SubscribeStanzas(ch chan<- client.Stanza) {
 	c.subscribers.subscribe(ch)
 }
 
-func Wrap(c client.Client) *Connection {
-	conn := &Connection{
+func Wrap(c client.Client) Client {
+	conn := &connection{
 		Client:  c,
 		stanzas: make(chan client.Stanza, 100),
 	}
@@ -59,7 +74,7 @@ func Wrap(c client.Client) *Connection {
 
 type AuthorizationRequest client.Presence
 
-func (c *Connection) read() {
+func (c *connection) read() {
 	for stanza := range c.stanzas {
 		// TODO way to subscribe to roster events (roster push, subscription requests, ...)
 		switch t := stanza.(type) {
@@ -95,7 +110,7 @@ type rosterQuery struct {
 	Item    *RosterItem `xml:"item,omitempty"`
 }
 
-func (c *Connection) GetRoster() Roster {
+func (c *connection) GetRoster() Roster {
 	// TODO implement
 
 	ch, _ := c.SendIQ("", "get", rosterQuery{})
@@ -107,14 +122,14 @@ func (c *Connection) GetRoster() Roster {
 // AddToRoster adds an item to the roster. If no item with the
 // specified JID exists yet, a new one will be created. Otherwise an
 // existing one will be updated.
-func (c *Connection) AddToRoster(item RosterItem) error {
+func (c *connection) AddToRoster(item RosterItem) error {
 	ch, _ := c.SendIQ("", "set", rosterQuery{Item: &item})
 	// TODO implement error handling
 	<-ch
 	return nil
 }
 
-func (c *Connection) RemoveFromRoster(jid string) error {
+func (c *connection) RemoveFromRoster(jid string) error {
 	ch, _ := c.SendIQ("", "set", rosterQuery{Item: &RosterItem{
 		JID:          jid,
 		Subscription: "remove",
@@ -124,7 +139,7 @@ func (c *Connection) RemoveFromRoster(jid string) error {
 	// TODO handle error
 }
 
-func (c *Connection) Subscribe(jid string) (cookie string, err error) {
+func (c *connection) Subscribe(jid string) (cookie string, err error) {
 	cookie, err = c.SendPresence(client.Presence{
 		Header: client.Header{
 			To:   jid,
@@ -135,7 +150,7 @@ func (c *Connection) Subscribe(jid string) (cookie string, err error) {
 	// TODO handle error
 }
 
-func (c *Connection) Unsubscribe(jid string) (cookie string, err error) {
+func (c *connection) Unsubscribe(jid string) (cookie string, err error) {
 	cookie, err = c.SendPresence(client.Presence{
 		Header: client.Header{
 			To:   jid,
@@ -146,7 +161,7 @@ func (c *Connection) Unsubscribe(jid string) (cookie string, err error) {
 	// TODO handle error
 }
 
-func (c *Connection) ApproveSubscription(jid string) {
+func (c *connection) ApproveSubscription(jid string) {
 	c.SendPresence(client.Presence{
 		Header: client.Header{
 			To:   jid,
@@ -155,7 +170,7 @@ func (c *Connection) ApproveSubscription(jid string) {
 	})
 }
 
-func (c *Connection) DenySubscription(jid string) {
+func (c *connection) DenySubscription(jid string) {
 	// TODO document that this can also be used to revoke an existing
 	// subscription
 	c.SendPresence(client.Presence{
@@ -166,18 +181,18 @@ func (c *Connection) DenySubscription(jid string) {
 	})
 }
 
-func (c *Connection) BecomeAvailable() {
+func (c *connection) BecomeAvailable() {
 	// TODO document SendPresence (rfc6120) for more specific needs
 	c.SendPresence(client.Presence{})
 }
 
-func (c *Connection) BecomeUnavailable() {
+func (c *connection) BecomeUnavailable() {
 	// TODO document SendPresence (rfc6120) for more specific needs
 	// TODO can't be have one global xml encoder?
 	xml.NewEncoder(c).Encode(client.Presence{Header: client.Header{Type: "unavailable"}})
 }
 
-func (c *Connection) SendMessage(typ, to, message string) {
+func (c *connection) SendMessage(typ, to, message string) {
 	// TODO support extended items in the mssage
 	// TODO if `to` is a bare JID, see if we know about a full JID to
 	// use instead
@@ -197,7 +212,7 @@ func (c *Connection) SendMessage(typ, to, message string) {
 	xml.NewEncoder(c).Encode(m)
 }
 
-func (c *Connection) Reply(orig *client.Message, reply string) {
+func (c *connection) Reply(orig *client.Message, reply string) {
 	// TODO threading
 	// TODO use bare JID if full JID isn't up to date anymore
 	// TODO support subject
