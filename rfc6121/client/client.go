@@ -9,29 +9,38 @@ import (
 	"encoding/xml"
 	"github.com/davecgh/go-spew/spew"
 	"honnef.co/go/xmpp/rfc6120/client"
+	"sync"
 )
 
 var _ = spew.Dump
 
 type Connection struct {
 	*client.Connection
-	Stream chan client.Stanza
+	stanzas            chan client.Stanza
+}
+
 }
 
 func Wrap(c *client.Connection) *Connection {
-	conn := &Connection{c, make(chan client.Stanza)}
+	conn := &Connection{
+		Connection: c,
+		stanzas:    make(chan client.Stanza, 100),
+	}
 	go conn.read()
+	c.SubscribeStanzas(conn.stanzas)
 	return conn
 }
 
 func (c *Connection) read() {
-	for stanza := range c.Connection.Stream {
+	for stanza := range c.stanzas {
 		// TODO maybe have a channel for Roster events (roster push)
 		// on which to send changes?
 
 		// TODO maybe have a channel for subscription requests?
-		if iq, ok := stanza.(*client.IQ); ok {
-			if iq.Query.Space == "jabber:iq:roster" && iq.Type == "set" {
+
+		switch t := stanza.(type) {
+		case *client.IQ:
+			if t.Query.Space == "jabber:iq:roster" && t.Type == "set" {
 				// TODO should we send this stanza back on the stream?
 				// After all the user might be interested in it?
 
@@ -41,7 +50,6 @@ func (c *Connection) read() {
 				c.SendIQReply("", "result", stanza.ID(), nil)
 			}
 		}
-		c.Stream <- stanza
 	}
 }
 

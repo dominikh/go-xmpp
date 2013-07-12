@@ -42,6 +42,28 @@ func findCompatibleMechanism(ours, theirs []string) string {
 	return ""
 }
 
+type subscribers struct {
+	sync.RWMutex
+	chans []chan<- Stanza
+}
+
+func (s *subscribers) send(stanza Stanza) {
+	s.RLock()
+	defer s.RUnlock()
+	for _, ch := range s.chans {
+		select {
+		case ch <- stanza:
+		default:
+		}
+	}
+}
+
+func (s *subscribers) subscribe(ch chan<- Stanza) {
+	s.Lock()
+	defer s.Unlock()
+	s.chans = append(s.chans, ch)
+}
+
 type Connection struct {
 	net.Conn
 	sync.Mutex
@@ -54,8 +76,9 @@ type Connection struct {
 	cookieQuit chan<- struct{}
 	JID        string
 	callbacks  map[string]chan *IQ
-	Stream     chan Stanza
 	Closing    bool
+	// TODO reconsider choice of structure when we allow unsubscribing
+	subscribers subscribers
 }
 
 func generateCookies(ch chan<- string, quit <-chan struct{}) {
@@ -94,7 +117,6 @@ connectLoop:
 					cookie:     cookieChan,
 					cookieQuit: cookieQuitChan,
 					callbacks:  make(map[string]chan *IQ),
-					Stream:     make(chan Stanza),
 				}
 
 				break connectLoop
@@ -220,7 +242,6 @@ func (c *Connection) read() {
 		t, _ := c.NextStartElement()
 
 		if t == nil {
-			close(c.Stream)
 			c.Lock()
 			for _, ch := range c.callbacks {
 				close(ch)
@@ -256,7 +277,7 @@ func (c *Connection) read() {
 			}
 			c.Unlock()
 		} else {
-			c.Stream <- nv
+			c.subscribers.send(nv)
 		}
 	}
 }
@@ -496,4 +517,8 @@ func (c *Connection) SendPresence(p Presence) (cookie string, err error) {
 	xml.NewEncoder(c).Encode(p)
 	return p.Id, nil
 	// TODO handle error (both of NewEncoder and what the server will tell us)
+}
+
+func (c *Connection) SubscribeStanzas(ch chan<- Stanza) {
+	c.subscribers.subscribe(ch)
 }
