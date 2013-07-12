@@ -4,6 +4,8 @@ package client
 // TODO check namespaces everywhere
 // TODO optional reconnect handling: 1) reconnect if enabled 2) close
 // channels when the connection is gone for good
+// TODO add a namespace registry, and send <service-unavailable/>
+// errors for unsupported namespaces (section 8.4)
 
 import (
 	"bytes"
