@@ -2,6 +2,8 @@ package client
 
 // TODO make sure whitespace keepalive doesn't break our code
 // TODO check namespaces everywhere
+// TODO optional reconnect handling: 1) reconnect if enabled 2) close
+// channels when the connection is gone for good
 
 import (
 	"bytes"
@@ -93,8 +95,8 @@ func generateCookies(ch chan<- string, quit <-chan struct{}) {
 	}
 }
 
-func Connect(user, host, password string) (*Connection, []error) {
-	var conn *Connection
+func Connect(user, host, password string) (conn *Connection, errors []error, ok bool) {
+	// var conn *Connection
 	addrs, errors := Resolve(host)
 
 connectLoop:
@@ -125,7 +127,7 @@ connectLoop:
 	}
 
 	if conn == nil {
-		return nil, errors
+		return nil, errors, false
 	}
 
 	// TODO error handling
@@ -148,7 +150,7 @@ connectLoop:
 	go conn.read()
 	conn.Bind()
 
-	return conn, errors
+	return conn, errors, true
 }
 
 type Stanza interface {
