@@ -16,16 +16,17 @@ var _ = spew.Dump
 
 type Connection struct {
 	*client.Connection
-	stanzas            chan client.Stanza
-	messageSubscribers messageSubscribers
+	stanzas     chan client.Stanza
+	subscribers subscribers
 }
 
-type messageSubscribers struct {
+// TODO this is an exact copy from rfc6120. DRY this.
+type subscribers struct {
 	sync.RWMutex
-	chans []chan<- *client.Message
+	chans []chan<- client.Stanza
 }
 
-func (s *messageSubscribers) send(stanza *client.Message) {
+func (s *subscribers) send(stanza client.Stanza) {
 	s.RLock()
 	defer s.RUnlock()
 	for _, ch := range s.chans {
@@ -36,14 +37,14 @@ func (s *messageSubscribers) send(stanza *client.Message) {
 	}
 }
 
-func (s *messageSubscribers) subscribe(ch chan<- *client.Message) {
+func (s *subscribers) subscribe(ch chan<- client.Stanza) {
 	s.Lock()
 	defer s.Unlock()
 	s.chans = append(s.chans, ch)
 }
 
-func (c *Connection) SubscribeMessages(ch chan<- *client.Message) {
-	c.messageSubscribers.subscribe(ch)
+func (c *Connection) SubscribeStanzas(ch chan<- client.Stanza) {
+	c.subscribers.subscribe(ch)
 }
 
 func Wrap(c *client.Connection) *Connection {
@@ -67,10 +68,10 @@ func (c *Connection) read() {
 				// address")
 				c.SendIQReply("", "result", stanza.ID(), nil)
 			}
-		case *client.Message:
+		default:
 			// TODO track JID etc
-			c.messageSubscribers.send(t)
 		}
+		c.subscribers.send(stanza)
 	}
 }
 
