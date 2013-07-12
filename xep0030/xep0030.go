@@ -29,6 +29,16 @@ type Feature struct {
 	Var string `xml:"var,attr"`
 }
 
+type Items struct {
+	Items []Item `xml:"item"`
+}
+
+type Item struct {
+	JID  string `xml:"jid,attr"`
+	Name string `xml:"name,attr"`
+	Node string `xml:"node,attr"`
+}
+
 // FIXME return error
 func (c Connection) GetInfo(to string) Info {
 	return GetInfo(c, to)
@@ -65,4 +75,36 @@ func GetInfoFromNode(c client.Client, to, node string) Info {
 	}{Node: node})
 
 	return parseInfo(<-ch)
+}
+
+func (c Connection) GetItems(to string) Items {
+	return GetItems(c, to)
+}
+
+func (c Connection) GetItemsFromNode(to, node string) Items {
+	return GetItemsFromNode(c, to, node)
+}
+
+func parseItems(s *client.IQ) Items {
+	var items Items
+	xml.Unmarshal(s.Inner, &items)
+
+	return items
+}
+
+func GetItems(c client.Client, to string) Items {
+	ch, _ := c.SendIQ(to, "get", struct {
+		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#items query"`
+	}{})
+
+	return parseItems(<-ch)
+}
+
+func GetItemsFromNode(c client.Client, to, node string) Items {
+	ch, _ := c.SendIQ(to, "get", struct {
+		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#items query"`
+		Node    string   `xml:"node,attr"`
+	}{Node: node})
+
+	return parseItems(<-ch)
 }
