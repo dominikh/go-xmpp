@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -32,6 +33,15 @@ const (
 var _ = spew.Dump
 
 var SupportedMechanisms = []string{"PLAIN"}
+
+type Client interface {
+	io.Writer
+	SendIQ(to, typ string, value interface{}) (chan *IQ, string)
+	SendIQReply(to, typ, id string, value interface{})
+	SendPresence(p Presence) (cookie string, err error)
+	SubscribeStanzas(ch chan<- Stanza)
+	Close()
+}
 
 // TODO move out of client package?
 func findCompatibleMechanism(ours, theirs []string) string {

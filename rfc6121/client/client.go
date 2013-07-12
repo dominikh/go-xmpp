@@ -166,26 +166,15 @@ func (c *Connection) DenySubscription(jid string) {
 	})
 }
 
-func (c *Connection) SendPresence(p *client.Presence) {
-	var pp client.Presence
-	if p != nil {
-		pp = *p
-	}
-
-	xml.NewEncoder(c).Encode(pp)
+func (c *Connection) BecomeAvailable() {
+	// TODO document SendPresence (rfc6120) for more specific needs
+	c.Connection.SendPresence(client.Presence{})
 }
 
-func (c *Connection) BecomeUnavailable(p *client.Presence) {
-	var pp client.Presence
-	if p != nil {
-		pp = *p
-	}
-
-	pp.Type = "unavailable"
-	pp.Show = ""
-	pp.Priority = 0
+func (c *Connection) BecomeUnavailable() {
+	// TODO document SendPresence (rfc6120) for more specific needs
 	// TODO can't be have one global xml encoder?
-	xml.NewEncoder(c).Encode(pp)
+	xml.NewEncoder(c).Encode(client.Presence{Header: client.Header{Type: "unavailable"}})
 }
 
 func (c *Connection) SendMessage(typ, to, message string) {
