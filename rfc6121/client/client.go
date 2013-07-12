@@ -58,17 +58,10 @@ func Wrap(c *client.Connection) *Connection {
 
 func (c *Connection) read() {
 	for stanza := range c.stanzas {
-		// TODO maybe have a channel for Roster events (roster push)
-		// on which to send changes?
-
-		// TODO maybe have a channel for subscription requests?
-
+		// TODO way to subscribe to roster events (roster push, subscription requests, ...)
 		switch t := stanza.(type) {
 		case *client.IQ:
 			if t.Query.Space == "jabber:iq:roster" && t.Type == "set" {
-				// TODO should we send this stanza back on the stream?
-				// After all the user might be interested in it?
-
 				// TODO check 'from' ("Security Warning:
 				// Traditionally, a roster push included no 'from'
 				// address")
@@ -76,7 +69,6 @@ func (c *Connection) read() {
 			}
 		case *client.Message:
 			// TODO track JID etc
-			// FIXME what if nobody is listening?
 			c.messageSubscribers.send(t)
 		}
 	}
