@@ -9,6 +9,7 @@ package rfc6120
 
 import (
 	shared "honnef.co/go/xmpp/shared/rfc6120"
+	"honnef.co/go/xmpp/shared/xep"
 
 	"bytes"
 	"crypto/tls"
@@ -16,7 +17,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"io"
 	"net"
 	"strings"
@@ -32,8 +32,6 @@ const (
 	nsClient  = "jabber:client"
 )
 
-var _ = spew.Dump
-
 var SupportedMechanisms = []string{"PLAIN"}
 
 type Client interface {
@@ -43,6 +41,9 @@ type Client interface {
 	SendPresence(p Presence) (cookie string, err error)
 	EmitStanza(s Stanza)
 	SubscribeStanzas(ch chan<- Stanza)
+	RegisterXEP(n int, x xep.Interface, required ...int) bool
+	GetXEP(n int) (xep.Interface, bool)
+	MustGetXEP(n int) xep.Interface
 	JID() string
 	Close()
 }
@@ -101,6 +102,52 @@ type Connection struct {
 	closing    bool
 	// TODO reconsider choice of structure when we allow unsubscribing
 	subscribers subscribers
+	extensions  extensions
+}
+
+type extensions struct {
+	sync.RWMutex
+	m map[int]xep.Interface
+}
+
+func (e *extensions) get(n int) (xep.Interface, bool) {
+	e.RLock()
+	defer e.RUnlock()
+
+	x, ok := e.m[n]
+
+	return x, ok
+}
+
+func (e *extensions) register(n int, x xep.Interface, required ...int) bool {
+	e.Lock()
+	defer e.Unlock()
+
+	for _, req := range required {
+		if _, ok := e.m[req]; !ok {
+			return false
+		}
+	}
+
+	e.m[n] = x
+	return true
+}
+
+func (c *Connection) RegisterXEP(n int, x xep.Interface, required ...int) bool {
+	return c.extensions.register(n, x, required...)
+}
+
+func (c *Connection) GetXEP(n int) (xep.Interface, bool) {
+	return c.extensions.get(n)
+}
+
+func (c *Connection) MustGetXEP(n int) xep.Interface {
+	x, ok := c.extensions.get(n)
+	if !ok {
+		panic(fmt.Sprintf("XEP-%04d is not registered", n))
+	}
+
+	return x
 }
 
 func (c *Connection) EmitStanza(stanza Stanza) {
@@ -142,6 +189,7 @@ connectLoop:
 					cookie:     cookieChan,
 					cookieQuit: cookieQuitChan,
 					callbacks:  make(map[string]chan *IQ),
+					extensions: extensions{m: make(map[int]xep.Interface)},
 				}
 
 				break connectLoop

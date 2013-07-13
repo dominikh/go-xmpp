@@ -1,8 +1,9 @@
 package xep0030
 
 import (
-	"encoding/xml"
 	"honnef.co/go/xmpp/client/rfc6120"
+
+	"encoding/xml"
 	"sync"
 )
 
@@ -21,11 +22,14 @@ func Wrap(c rfc6120.Client) *Connection {
 		stanzas: make(chan rfc6120.Stanza, 100),
 	}
 
-	conn.AddFeature(Feature{Var: "http://jabber.org/protocol/disco#info"})
+	conn.AddFeature("http://jabber.org/protocol/disco#info")
 
 	c.SubscribeStanzas(conn.stanzas)
 
 	go conn.read()
+
+	c.RegisterXEP(30, conn)
+
 	return conn
 }
 
@@ -35,9 +39,9 @@ func (c *Connection) AddIdentity(id Identity) {
 	c.Unlock()
 }
 
-func (c *Connection) AddFeature(f Feature) {
+func (c *Connection) AddFeature(f string) {
 	c.Lock()
-	c.features = append(c.features, f)
+	c.features = append(c.features, Feature{f})
 	c.Unlock()
 }
 
