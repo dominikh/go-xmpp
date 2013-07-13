@@ -1,7 +1,12 @@
+// Package xep0012 implements XEP-0012 (Last Activity).
+//
+// It allows to query an entities idle time/last online time/uptime.
+// It also enables answering such requests made to the client.
+//
+// Using this package necessitates reacting to the synthetic
+// LastActivityRequest stanza by replying to it with the correct idle
+// time (see (*LastActivityRequest).Reply()).
 package xep0012
-
-// TODO document that using this requires reacting to
-// LastActivityRequest stanzas
 
 import (
 	"encoding/xml"
@@ -45,6 +50,7 @@ func (c *Connection) read() {
 	}
 }
 
+// Reply replies to the Last Activity query.
 func (t *LastActivityRequest) Reply(seconds uint64) {
 	t.c.SendIQReply(t.From, "result", t.ID(), struct {
 		XMLName xml.Name `xml:"jabber:iq:last query"`
@@ -54,6 +60,9 @@ func (t *LastActivityRequest) Reply(seconds uint64) {
 	})
 }
 
+// Query sends a Last Activity query to an entity. The interpretation
+// of the returned values depends on whether the entity is an account,
+// resource or service.
 func (c *Connection) Query(who string) (seconds uint64, text string) {
 	ch, _ := c.SendIQ(who, "get", struct {
 		XMLName xml.Name `xml:"jabber:iq:last query"`
