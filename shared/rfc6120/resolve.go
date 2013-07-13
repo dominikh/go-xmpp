@@ -4,6 +4,11 @@ import (
 	"net"
 )
 
+const (
+        DefaultClientPort = 5222 // Default port for client-to-server connections
+        DefaultServerPort = 5269 // Default port for server-to-server connections
+)
+
 // consider renaming this type
 type Address struct {
 	IPs  []net.IP

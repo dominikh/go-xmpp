@@ -1,4 +1,4 @@
-package client
+package rfc6120
 
 import (
 	"encoding/xml"

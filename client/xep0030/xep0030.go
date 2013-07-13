@@ -2,23 +2,23 @@ package xep0030
 
 import (
 	"encoding/xml"
-	"honnef.co/go/xmpp/rfc6120/client"
+	"honnef.co/go/xmpp/client/rfc6120"
 	"sync"
 )
 
 type Connection struct {
-	client.Client
+	rfc6120.Client
 	sync.RWMutex
-	stanzas    chan client.Stanza
+	stanzas    chan rfc6120.Stanza
 	identities []Identity
 	features   []Feature
 }
 
 // TODO reconsider the `Wrap` name
-func Wrap(c client.Client) *Connection {
+func Wrap(c rfc6120.Client) *Connection {
 	conn := &Connection{
 		Client:  c,
-		stanzas: make(chan client.Stanza, 100),
+		stanzas: make(chan rfc6120.Stanza, 100),
 	}
 
 	conn.AddFeature(Feature{Var: "http://jabber.org/protocol/disco#info"})
@@ -44,7 +44,7 @@ func (c *Connection) AddFeature(f Feature) {
 func (c *Connection) read() {
 	// TODO support queries for items/item nodes
 	for stanza := range c.stanzas {
-		if iq, ok := stanza.(*client.IQ); ok {
+		if iq, ok := stanza.(*rfc6120.IQ); ok {
 			if iq.Query.Space == "http://jabber.org/protocol/disco#info" && iq.Type == "get" {
 				// TODO support queries targetted at nodes
 				c.RLock()
@@ -98,7 +98,7 @@ func (c *Connection) GetInfoFromNode(to, node string) Info {
 }
 
 // FIXME return error
-func parseInfo(s *client.IQ) Info {
+func parseInfo(s *rfc6120.IQ) Info {
 	var result Info
 	// FIXME handle error
 	xml.Unmarshal(s.Inner, &result)
@@ -107,7 +107,7 @@ func parseInfo(s *client.IQ) Info {
 }
 
 // FIXME return error
-func GetInfo(c client.Client, to string) Info {
+func GetInfo(c rfc6120.Client, to string) Info {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#info query"`
 	}{})
@@ -116,7 +116,7 @@ func GetInfo(c client.Client, to string) Info {
 }
 
 // FIXME return error
-func GetInfoFromNode(c client.Client, to, node string) Info {
+func GetInfoFromNode(c rfc6120.Client, to, node string) Info {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#info query"`
 		Node    string   `xml:"node,attr"`
@@ -133,14 +133,14 @@ func (c *Connection) GetItemsFromNode(to, node string) Items {
 	return GetItemsFromNode(c, to, node)
 }
 
-func parseItems(s *client.IQ) Items {
+func parseItems(s *rfc6120.IQ) Items {
 	var items Items
 	xml.Unmarshal(s.Inner, &items)
 
 	return items
 }
 
-func GetItems(c client.Client, to string) Items {
+func GetItems(c rfc6120.Client, to string) Items {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#items query"`
 	}{})
@@ -148,7 +148,7 @@ func GetItems(c client.Client, to string) Items {
 	return parseItems(<-ch)
 }
 
-func GetItemsFromNode(c client.Client, to, node string) Items {
+func GetItemsFromNode(c rfc6120.Client, to, node string) Items {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#items query"`
 		Node    string   `xml:"node,attr"`

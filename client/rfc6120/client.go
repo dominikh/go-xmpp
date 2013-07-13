@@ -1,4 +1,4 @@
-package client
+package rfc6120
 
 // TODO make sure whitespace keepalive doesn't break our code
 // TODO check namespaces everywhere
@@ -8,6 +8,8 @@ package client
 // errors for unsupported namespaces (section 8.4)
 
 import (
+	shared "honnef.co/go/xmpp/shared/rfc6120"
+
 	"bytes"
 	"crypto/tls"
 	"encoding/base64"
@@ -43,6 +45,10 @@ type Client interface {
 	SubscribeStanzas(ch chan<- Stanza)
 	JID() string
 	Close()
+}
+
+func Resolve(host string) ([]shared.Address, []error) {
+	return shared.ResolveFQDN(host, "xmpp-client")
 }
 
 // TODO move out of client package?
