@@ -43,6 +43,15 @@ func Wrap(c client.Client) Client {
 	return conn
 }
 
+func Dial(user, host, password string) (Client, []error, bool) {
+	c, errs, ok := client.Dial(user, host, password)
+	if !ok {
+		return nil, errs, ok
+	}
+
+	return Wrap(c), errs, true
+}
+
 type AuthorizationRequest client.Presence
 
 func (c *connection) read() {
