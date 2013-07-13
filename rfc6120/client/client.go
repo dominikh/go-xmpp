@@ -80,7 +80,7 @@ func (s *subscribers) subscribe(ch chan<- Stanza) {
 	s.chans = append(s.chans, ch)
 }
 
-type connection struct {
+type Connection struct {
 	net.Conn
 	sync.Mutex
 	user       string
@@ -97,7 +97,7 @@ type connection struct {
 	subscribers subscribers
 }
 
-func (c *connection) EmitStanza(stanza Stanza) {
+func (c *Connection) EmitStanza(stanza Stanza) {
 	c.subscribers.send(stanza)
 }
 
@@ -113,8 +113,7 @@ func generateCookies(ch chan<- string, quit <-chan struct{}) {
 	}
 }
 
-func Dial(user, host, password string) (client Client, errors []error, ok bool) {
-	var conn *connection
+func Dial(user, host, password string) (client *Connection, errors []error, ok bool) {
 	addrs, errors := Resolve(host)
 
 connectLoop:
@@ -128,7 +127,7 @@ connectLoop:
 				cookieChan := make(chan string)
 				cookieQuitChan := make(chan struct{})
 				go generateCookies(cookieChan, cookieQuitChan)
-				conn = &connection{
+				client = &Connection{
 					Conn:       c,
 					user:       user,
 					password:   password,
@@ -144,31 +143,31 @@ connectLoop:
 		}
 	}
 
-	if conn == nil {
+	if client == nil {
 		return nil, errors, false
 	}
 
 	// TODO error handling
 	for {
-		conn.openStream()
-		conn.receiveStream()
-		conn.parseFeatures()
-		if conn.features.Includes("starttls") {
-			conn.startTLS() // TODO handle error
+		client.openStream()
+		client.receiveStream()
+		client.parseFeatures()
+		if client.features.Includes("starttls") {
+			client.startTLS() // TODO handle error
 			continue
 		}
 
-		if conn.features.Requires("sasl") {
-			conn.sasl()
+		if client.features.Requires("sasl") {
+			client.sasl()
 			continue
 		}
 		break
 	}
 
-	go conn.read()
-	conn.bind()
+	go client.read()
+	client.bind()
 
-	return conn, errors, true
+	return client, errors, true
 }
 
 type Stanza interface {
@@ -257,11 +256,11 @@ func (streamError) IsError() bool {
 	return true
 }
 
-func (c *connection) JID() string {
+func (c *Connection) JID() string {
 	return c.jid
 }
 
-func (c *connection) read() {
+func (c *Connection) read() {
 	for {
 		t, _ := c.nextStartElement()
 
@@ -306,11 +305,11 @@ func (c *connection) read() {
 	}
 }
 
-func (c *connection) getCookie() string {
+func (c *Connection) getCookie() string {
 	return <-c.cookie
 }
 
-func (c *connection) bind() {
+func (c *Connection) bind() {
 	// TODO support binding to a user-specified resource
 	// TODO handle error cases
 
@@ -328,12 +327,12 @@ func (c *connection) bind() {
 	c.jid = bind.JID
 }
 
-func (c *connection) reset() {
+func (c *Connection) reset() {
 	c.decoder = xml.NewDecoder(c.Conn)
 	c.features = nil
 }
 
-func (c *connection) sasl() {
+func (c *Connection) sasl() {
 	payload := fmt.Sprintf("\x00%s\x00%s", c.user, c.password)
 	payloadb64 := base64.StdEncoding.EncodeToString([]byte(payload))
 	fmt.Fprintf(c, "<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>%s</auth>", payloadb64)
@@ -347,7 +346,7 @@ func (c *connection) sasl() {
 	// TODO actually determine which mechanism we can use, use interfaces etc to call it
 }
 
-func (c *connection) startTLS() error {
+func (c *Connection) startTLS() error {
 	fmt.Fprint(c, "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>")
 	t, _ := c.nextStartElement() // FIXME error handling
 	if t.Name.Local != "proceed" {
@@ -377,7 +376,7 @@ func (c *connection) startTLS() error {
 
 // TODO Move this outside of client. This function will be used by
 // servers, too.
-func (c *connection) nextStartElement() (*xml.StartElement, error) {
+func (c *Connection) nextStartElement() (*xml.StartElement, error) {
 	for {
 		t, err := c.decoder.Token()
 		if err != nil {
@@ -395,7 +394,7 @@ func (c *connection) nextStartElement() (*xml.StartElement, error) {
 	}
 }
 
-func (c *connection) nextToken() (xml.Token, error) {
+func (c *Connection) nextToken() (xml.Token, error) {
 	return c.decoder.Token()
 }
 
@@ -408,7 +407,7 @@ func (e UnexpectedMessage) Error() string {
 }
 
 // TODO return error of Fprintf
-func (c *connection) openStream() {
+func (c *Connection) openStream() {
 	// TODO consider not including the JID if the connection isn't encrypted yet
 	// TODO configurable xml:lang
 	fmt.Fprintf(c, "<?xml version='1.0' encoding='UTF-8'?><stream:stream from='%s@%s' to='%s' version='1.0' xml:lang='en' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>",
@@ -423,7 +422,7 @@ func (e UnsupportedVersion) Error() string {
 	return "Unsupported XMPP version: " + e.Version
 }
 
-func (c *connection) receiveStream() error {
+func (c *Connection) receiveStream() error {
 	t, err := c.nextStartElement() // TODO error handling
 	if err != nil {
 		return err
@@ -462,7 +461,7 @@ func (c *connection) receiveStream() error {
 	return nil
 }
 
-func (c *connection) Close() {
+func (c *Connection) Close() {
 	if c.closing {
 		// Terminate TCP connection
 		c.Conn.Close()
@@ -501,7 +500,7 @@ func xmlEscape(s string) string {
 }
 
 // TODO error handling
-func (c *connection) SendIQ(to, typ string, value interface{}) (chan *IQ, string) {
+func (c *Connection) SendIQ(to, typ string, value interface{}) (chan *IQ, string) {
 	cookie := c.getCookie()
 	reply := make(chan *IQ, 1)
 	c.Lock()
@@ -521,7 +520,7 @@ func (c *connection) SendIQ(to, typ string, value interface{}) (chan *IQ, string
 }
 
 // TODO get rid of to and id arguments, use IQ value instead
-func (c *connection) SendIQReply(to, typ, id string, value interface{}) {
+func (c *Connection) SendIQReply(to, typ, id string, value interface{}) {
 	toAttr := ""
 	if len(to) > 0 {
 		toAttr = "to='" + xmlEscape(to) + "'"
@@ -535,7 +534,7 @@ func (c *connection) SendIQReply(to, typ, id string, value interface{}) {
 
 }
 
-func (c *connection) SendPresence(p Presence) (cookie string, err error) {
+func (c *Connection) SendPresence(p Presence) (cookie string, err error) {
 	// TODO do we need to store the cookie somewhere? present the user with a channel?
 	// TODO document that we set the ID
 	p.Id = c.getCookie()
@@ -544,6 +543,6 @@ func (c *connection) SendPresence(p Presence) (cookie string, err error) {
 	// TODO handle error (both of NewEncoder and what the server will tell us)
 }
 
-func (c *connection) SubscribeStanzas(ch chan<- Stanza) {
+func (c *Connection) SubscribeStanzas(ch chan<- Stanza) {
 	c.subscribers.subscribe(ch)
 }

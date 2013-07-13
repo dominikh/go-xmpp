@@ -28,13 +28,13 @@ type Client interface {
 	Reply(orig *client.Message, reply string)
 }
 
-type connection struct {
+type Connection struct {
 	client.Client
 	stanzas chan client.Stanza
 }
 
-func Wrap(c client.Client) Client {
-	conn := &connection{
+func Wrap(c client.Client) *Connection {
+	conn := &Connection{
 		Client:  c,
 		stanzas: make(chan client.Stanza, 100),
 	}
@@ -43,7 +43,7 @@ func Wrap(c client.Client) Client {
 	return conn
 }
 
-func Dial(user, host, password string) (Client, []error, bool) {
+func Dial(user, host, password string) (*Connection, []error, bool) {
 	c, errs, ok := client.Dial(user, host, password)
 	if !ok {
 		return nil, errs, ok
@@ -54,7 +54,7 @@ func Dial(user, host, password string) (Client, []error, bool) {
 
 type AuthorizationRequest client.Presence
 
-func (c *connection) read() {
+func (c *Connection) read() {
 	for stanza := range c.stanzas {
 		// TODO way to subscribe to roster events (roster push, subscription requests, ...)
 		switch t := stanza.(type) {
@@ -90,7 +90,7 @@ type rosterQuery struct {
 	Item    *RosterItem `xml:"item,omitempty"`
 }
 
-func (c *connection) GetRoster() Roster {
+func (c *Connection) GetRoster() Roster {
 	// TODO implement
 
 	ch, _ := c.SendIQ("", "get", rosterQuery{})
@@ -102,14 +102,14 @@ func (c *connection) GetRoster() Roster {
 // AddToRoster adds an item to the roster. If no item with the
 // specified JID exists yet, a new one will be created. Otherwise an
 // existing one will be updated.
-func (c *connection) AddToRoster(item RosterItem) error {
+func (c *Connection) AddToRoster(item RosterItem) error {
 	ch, _ := c.SendIQ("", "set", rosterQuery{Item: &item})
 	// TODO implement error handling
 	<-ch
 	return nil
 }
 
-func (c *connection) RemoveFromRoster(jid string) error {
+func (c *Connection) RemoveFromRoster(jid string) error {
 	ch, _ := c.SendIQ("", "set", rosterQuery{Item: &RosterItem{
 		JID:          jid,
 		Subscription: "remove",
@@ -119,7 +119,7 @@ func (c *connection) RemoveFromRoster(jid string) error {
 	// TODO handle error
 }
 
-func (c *connection) Subscribe(jid string) (cookie string, err error) {
+func (c *Connection) Subscribe(jid string) (cookie string, err error) {
 	cookie, err = c.SendPresence(client.Presence{
 		Header: client.Header{
 			To:   jid,
@@ -130,7 +130,7 @@ func (c *connection) Subscribe(jid string) (cookie string, err error) {
 	// TODO handle error
 }
 
-func (c *connection) Unsubscribe(jid string) (cookie string, err error) {
+func (c *Connection) Unsubscribe(jid string) (cookie string, err error) {
 	cookie, err = c.SendPresence(client.Presence{
 		Header: client.Header{
 			To:   jid,
@@ -141,7 +141,7 @@ func (c *connection) Unsubscribe(jid string) (cookie string, err error) {
 	// TODO handle error
 }
 
-func (c *connection) ApproveSubscription(jid string) {
+func (c *Connection) ApproveSubscription(jid string) {
 	c.SendPresence(client.Presence{
 		Header: client.Header{
 			To:   jid,
@@ -150,7 +150,7 @@ func (c *connection) ApproveSubscription(jid string) {
 	})
 }
 
-func (c *connection) DenySubscription(jid string) {
+func (c *Connection) DenySubscription(jid string) {
 	// TODO document that this can also be used to revoke an existing
 	// subscription
 	c.SendPresence(client.Presence{
@@ -161,18 +161,18 @@ func (c *connection) DenySubscription(jid string) {
 	})
 }
 
-func (c *connection) BecomeAvailable() {
+func (c *Connection) BecomeAvailable() {
 	// TODO document SendPresence (rfc6120) for more specific needs
 	c.SendPresence(client.Presence{})
 }
 
-func (c *connection) BecomeUnavailable() {
+func (c *Connection) BecomeUnavailable() {
 	// TODO document SendPresence (rfc6120) for more specific needs
 	// TODO can't be have one global xml encoder?
 	xml.NewEncoder(c).Encode(client.Presence{Header: client.Header{Type: "unavailable"}})
 }
 
-func (c *connection) SendMessage(typ, to, message string) {
+func (c *Connection) SendMessage(typ, to, message string) {
 	// TODO support extended items in the mssage
 	// TODO if `to` is a bare JID, see if we know about a full JID to
 	// use instead
@@ -192,7 +192,7 @@ func (c *connection) SendMessage(typ, to, message string) {
 	xml.NewEncoder(c).Encode(m)
 }
 
-func (c *connection) Reply(orig *client.Message, reply string) {
+func (c *Connection) Reply(orig *client.Message, reply string) {
 	// TODO threading
 	// TODO use bare JID if full JID isn't up to date anymore
 	// TODO support subject
