@@ -39,6 +39,7 @@ type Client interface {
 	SendIQ(to, typ string, value interface{}) (chan *IQ, string)
 	SendIQReply(to, typ, id string, value interface{})
 	SendPresence(p Presence) (cookie string, err error)
+	EmitStanza(s Stanza)
 	SubscribeStanzas(ch chan<- Stanza)
 	JID() string
 	Close()
@@ -94,6 +95,10 @@ type connection struct {
 	closing    bool
 	// TODO reconsider choice of structure when we allow unsubscribing
 	subscribers subscribers
+}
+
+func (c *connection) EmitStanza(stanza Stanza) {
+	c.subscribers.send(stanza)
 }
 
 func generateCookies(ch chan<- string, quit <-chan struct{}) {

@@ -9,7 +9,6 @@ import (
 	"encoding/xml"
 	"github.com/davecgh/go-spew/spew"
 	"honnef.co/go/xmpp/rfc6120/client"
-	"sync"
 )
 
 var _ = spew.Dump
@@ -31,35 +30,7 @@ type Client interface {
 
 type connection struct {
 	client.Client
-	stanzas     chan client.Stanza
-	subscribers subscribers
-}
-
-// TODO this is an exact copy from rfc6120. DRY this.
-type subscribers struct {
-	sync.RWMutex
-	chans []chan<- client.Stanza
-}
-
-func (s *subscribers) send(stanza client.Stanza) {
-	s.RLock()
-	defer s.RUnlock()
-	for _, ch := range s.chans {
-		select {
-		case ch <- stanza:
-		default:
-		}
-	}
-}
-
-func (s *subscribers) subscribe(ch chan<- client.Stanza) {
-	s.Lock()
-	defer s.Unlock()
-	s.chans = append(s.chans, ch)
-}
-
-func (c *connection) SubscribeStanzas(ch chan<- client.Stanza) {
-	c.subscribers.subscribe(ch)
+	stanzas chan client.Stanza
 }
 
 func Wrap(c client.Client) Client {
@@ -87,12 +58,12 @@ func (c *connection) read() {
 			}
 		case *client.Presence:
 			if t.Type == "subscribe" {
-				c.subscribers.send((*AuthorizationRequest)(t))
+				c.EmitStanza((*AuthorizationRequest)(t))
+				// c.subscribers.send((*AuthorizationRequest)(t))
 			}
 		default:
 			// TODO track JID etc
 		}
-		c.subscribers.send(stanza)
 	}
 }
 
