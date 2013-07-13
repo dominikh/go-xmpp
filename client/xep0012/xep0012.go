@@ -1,16 +1,22 @@
 package xep0012
 
+// TODO document that using this requires reacting to
+// LastActivityRequest stanzas
+
 import (
 	"encoding/xml"
 	"honnef.co/go/xmpp/client/rfc6120"
 	"honnef.co/go/xmpp/client/xep0030"
-	"sync/atomic"
 )
 
 type Connection struct {
-	seconds uint64
 	rfc6120.Client
 	stanzas chan rfc6120.Stanza
+}
+
+type LastActivityRequest struct {
+	*rfc6120.IQ
+	c *Connection
 }
 
 func Wrap(c rfc6120.Client) *Connection {
@@ -29,25 +35,23 @@ func Wrap(c rfc6120.Client) *Connection {
 	return conn
 }
 
-// TODO would a callback be better here? Imagine someone asks for this
-// client's idle time, how are we going to get an accurate value?
-func (c *Connection) SetLast(seconds uint64) {
-	atomic.StoreUint64(&c.seconds, seconds)
-}
-
 func (c *Connection) read() {
 	for stanza := range c.stanzas {
 		if iq, ok := stanza.(*rfc6120.IQ); ok {
 			if iq.Query.Space == "jabber:iq:last" && iq.Type == "get" {
-				c.SendIQReply(iq.From, "result", iq.ID(), struct {
-					XMLName xml.Name `xml:"jabber:iq:last query"`
-					Seconds uint64   `xml:"seconds,attr"`
-				}{
-					Seconds: atomic.LoadUint64(&c.seconds),
-				})
+				c.EmitStanza(&LastActivityRequest{iq, c})
 			}
 		}
 	}
+}
+
+func (t *LastActivityRequest) Reply(seconds uint64) {
+	t.c.SendIQReply(t.From, "result", t.ID(), struct {
+		XMLName xml.Name `xml:"jabber:iq:last query"`
+		Seconds uint64   `xml:"seconds,attr"`
+	}{
+		Seconds: seconds,
+	})
 }
 
 func (c *Connection) Query(who string) (seconds uint64, text string) {
