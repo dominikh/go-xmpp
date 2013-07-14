@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"strings"
 	"sync"
 )
@@ -33,6 +34,53 @@ const (
 )
 
 var SupportedMechanisms = []string{"PLAIN"}
+
+var ErrorTypes = make(map[xml.Name]XMPPError)
+
+func init() {
+	// We're using RegisterErrorType instead of directly populating
+	// the map to make use of its checks for correctness.
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "bad-request", ErrBadRequest{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "conflict", ErrConflict{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "feature-not-implemented", ErrFeatureNotImplemented{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "forbidden", ErrForbidden{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "gone", ErrGone{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "internal-server-error", ErrInternalServerError{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "item-not-found", ErrItemNotFound{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "jid-malformed", ErrJIDMalformed{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "not-acceptable", ErrNotAcceptable{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "not-allowed", ErrNotAllowed{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "not-authorized", ErrNotAuthorized{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "policy-violation", ErrPolicyViolation{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "recipient-unavailable", ErrRecipientUnavailable{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "redirect", ErrRedirect{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "registration-required", ErrRegistrationRequired{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "remote-server-not-found", ErrRemoteServerNotFound{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "remote-server-timeout", ErrRemoteServerTimeout{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "resource-constraint", ErrResourceConstraint{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "service-unavailable", ErrServiceUnavailable{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "subscription-required", ErrSubscriptionRequired{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "undefined-condition", ErrUndefinedCondition{})
+	RegisterErrorType("urn:ietf:params:xml:ns:xmpp-stanzas", "unexpected-request", ErrUnexpectedRequest{})
+}
+
+type XMPPError interface {
+	Name() xml.Name
+	Text() string
+}
+
+func RegisterErrorType(space, local string, err XMPPError) {
+	if reflect.ValueOf(err).Kind() == reflect.Ptr {
+		panic("Must not call RegisterErrorType with pointer type")
+	}
+
+	name := xml.Name{Space: space, Local: local}
+	if _, ok := ErrorTypes[name]; ok {
+		panic(fmt.Sprintf("An error type for '%s %s' has already been registered", space, local))
+	}
+
+	ErrorTypes[name] = err
+}
 
 type Client interface {
 	io.Writer
@@ -77,6 +125,8 @@ func (s *subscribers) send(stanza Stanza) {
 		select {
 		case ch <- stanza:
 		default:
+			// TODO tell the server that we couldn't process the stanza
+			// wait | <resource-constraint>
 		}
 	}
 }
@@ -250,6 +300,7 @@ type Message struct {
 
 	Subject string `xml:"subject"`
 	Body    string `xml:"body"`
+	Error   *Error `xml:"error,omitempty"`
 	Thread  string `xml:"thread"`
 }
 
@@ -271,6 +322,10 @@ type Presence struct {
 	// TODO support other tags inside the presence
 }
 
+func (p Presence) IsError() bool {
+	return p.Error != nil
+}
+
 type IQ struct { // info/query
 	XMLName xml.Name `xml:"jabber:client iq"`
 	Header
@@ -280,26 +335,60 @@ type IQ struct { // info/query
 	Inner []byte   `xml:",innerxml"`
 }
 
+func (iq IQ) IsError() bool {
+	return iq.Error != nil
+}
+
 type Error struct {
-	XMLName xml.Name `xml:"jabber:client error"`
-	Code    string   `xml:"code,attr"`
-	Type    string   `xml:"type,attr"`
-	Any     xml.Name `xml:",any"`
-	Text    string   `xml:"text"`
+	XMLName  xml.Name `xml:"jabber:client error"`
+	Type     string   `xml:"type,attr"`
+	Text     string   `xml:"text"` // TODO do we need to specify the namespace here?
+	InnerXML []byte   `xml:",innerxml"`
+}
+
+func (err Error) Error() string {
+	var b bytes.Buffer
+	b.WriteString(fmt.Sprintf("(%s) ", err.Type))
+	for _, e := range err.Errors() {
+		b.WriteString(fmt.Sprintf("<%s/>", e.Name().Local))
+	}
+
+	return b.String()
+}
+
+func (err Error) Errors() []XMPPError {
+	var errors []XMPPError
+
+	r := bytes.NewReader(err.InnerXML)
+	dec := xml.NewDecoder(r)
+
+	for {
+		// TODO handle error
+		t, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+
+		if start, ok := t.(xml.StartElement); ok {
+			errType, ok := ErrorTypes[start.Name]
+			if !ok {
+				// TODO stuff it into an "unrecognized error" struct or something
+				continue
+			}
+			errValue := reflect.New(reflect.TypeOf(errType)).Interface()
+			// TODO handle error
+			dec.DecodeElement(errValue, &start)
+			errors = append(errors, errValue.(XMPPError))
+		}
+	}
+
+	return errors
 }
 
 type streamError struct {
 	XMLName xml.Name `xml:"http://etherx.jabber.org/streams error"`
 	Any     xml.Name `xml:",any"`
 	Text    string   `xml:"text"`
-}
-
-func (Error) ID() string {
-	return ""
-}
-
-func (Error) IsError() bool {
-	return true
 }
 
 func (streamError) ID() string {
@@ -337,8 +426,6 @@ func (c *Connection) read() {
 			nv = &Presence{}
 		case nsClient + " iq":
 			nv = &IQ{}
-		case nsClient + " error":
-			nv = &Error{}
 		default:
 			fmt.Println(t.Name.Local)
 			// TODO handle error
@@ -346,6 +433,10 @@ func (c *Connection) read() {
 
 		// Unmarshal into that storage.
 		c.decoder.DecodeElement(nv, t)
+		// TODO what about message and presence? They can return
+		// errors, too, but they don't have any ID associated with
+		// them. how do we want to present such kinds of errors to the
+		// user?
 		if iq, ok := nv.(*IQ); ok && (iq.Type == "result" || iq.Type == "error") {
 			c.Lock()
 			if ch, ok := c.callbacks[nv.ID()]; ok {

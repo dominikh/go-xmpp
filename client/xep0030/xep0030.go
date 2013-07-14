@@ -92,26 +92,31 @@ type Item struct {
 }
 
 // FIXME return error
-func (c *Connection) GetInfo(to string) Info {
+func (c *Connection) GetInfo(to string) (Info, error) {
 	return GetInfo(c, to)
 }
 
 // FIXME return error
-func (c *Connection) GetInfoFromNode(to, node string) Info {
+func (c *Connection) GetInfoFromNode(to, node string) (Info, error) {
 	return GetInfoFromNode(c, to, node)
 }
 
 // FIXME return error
-func parseInfo(s *rfc6120.IQ) Info {
+func parseInfo(s *rfc6120.IQ) (Info, error) {
 	var result Info
+
+	if s.IsError() {
+		return result, s.Error
+	}
+
 	// FIXME handle error
 	xml.Unmarshal(s.Inner, &result)
 
-	return result
+	return result, nil
 }
 
 // FIXME return error
-func GetInfo(c rfc6120.Client, to string) Info {
+func GetInfo(c rfc6120.Client, to string) (Info, error) {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#info query"`
 	}{})
@@ -120,7 +125,7 @@ func GetInfo(c rfc6120.Client, to string) Info {
 }
 
 // FIXME return error
-func GetInfoFromNode(c rfc6120.Client, to, node string) Info {
+func GetInfoFromNode(c rfc6120.Client, to, node string) (Info, error) {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#info query"`
 		Node    string   `xml:"node,attr"`
@@ -129,22 +134,27 @@ func GetInfoFromNode(c rfc6120.Client, to, node string) Info {
 	return parseInfo(<-ch)
 }
 
-func (c *Connection) GetItems(to string) Items {
+func (c *Connection) GetItems(to string) (Items, error) {
 	return GetItems(c, to)
 }
 
-func (c *Connection) GetItemsFromNode(to, node string) Items {
+func (c *Connection) GetItemsFromNode(to, node string) (Items, error) {
 	return GetItemsFromNode(c, to, node)
 }
 
-func parseItems(s *rfc6120.IQ) Items {
+func parseItems(s *rfc6120.IQ) (Items, error) {
 	var items Items
+
+	if s.IsError() {
+		return items, s.Error
+	}
+
 	xml.Unmarshal(s.Inner, &items)
 
-	return items
+	return items, nil
 }
 
-func GetItems(c rfc6120.Client, to string) Items {
+func GetItems(c rfc6120.Client, to string) (Items, error) {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#items query"`
 	}{})
@@ -152,7 +162,7 @@ func GetItems(c rfc6120.Client, to string) Items {
 	return parseItems(<-ch)
 }
 
-func GetItemsFromNode(c rfc6120.Client, to, node string) Items {
+func GetItemsFromNode(c rfc6120.Client, to, node string) (Items, error) {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#items query"`
 		Node    string   `xml:"node,attr"`
@@ -160,3 +170,5 @@ func GetItemsFromNode(c rfc6120.Client, to, node string) Items {
 
 	return parseItems(<-ch)
 }
+
+// TODO do we need the functions or are methods enough?

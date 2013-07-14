@@ -63,18 +63,22 @@ func (t *LastActivityRequest) Reply(seconds uint64) {
 // Query sends a Last Activity query to an entity. The interpretation
 // of the returned values depends on whether the entity is an account,
 // resource or service.
-func (c *Connection) Query(who string) (seconds uint64, text string) {
+func (c *Connection) Query(who string) (seconds uint64, text string, err error) {
 	ch, _ := c.SendIQ(who, "get", struct {
 		XMLName xml.Name `xml:"jabber:iq:last query"`
 	}{})
 
 	res := <-ch
-	// TODO handle error case
+	if res.IsError() {
+		return 0, "", res.Error
+	}
 
 	var v struct {
 		Seconds uint64 `xml:"seconds,attr"`
 		Text    string `xml:",chardata"`
 	}
-	xml.Unmarshal(res.Inner, &v)
-	return v.Seconds, v.Text
+
+	// TODO consider wrapping this error in a more descriptive type
+	err = xml.Unmarshal(res.Inner, &v)
+	return v.Seconds, v.Text, err
 }
