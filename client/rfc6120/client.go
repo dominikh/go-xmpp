@@ -303,10 +303,10 @@ type Message struct {
 	XMLName xml.Name `xml:"jabber:client message"`
 	Header
 
-	Subject string `xml:"subject"`
-	Body    string `xml:"body"`
+	Subject string `xml:"subject,omitempty"`
+	Body    string `xml:"body"` // TODO omitempty?
 	Error   *Error `xml:"error,omitempty"`
-	Thread  string `xml:"thread"`
+	Thread  string `xml:"thread,omitempty"`
 }
 
 type Text struct {
