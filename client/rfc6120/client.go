@@ -688,6 +688,49 @@ func (c *Connection) SendPresence(p Presence) (cookie string, err error) {
 	// TODO handle error (both of NewEncoder and what the server will tell us)
 }
 
+// TODO reconsider name, since it conflicts with the idea of sending
+// stream errors as opposed to stanza errors
+func (c *Connection) SendError(inReplyTo Stanza, typ string, text string, errors []XMPPError) {
+	if inReplyTo.IsError() {
+		// 8.3.1: An entity that receives an error stanza MUST NOT
+		// respond to the stanza with a further error stanza; this
+		// helps to prevent looping.
+		return
+	}
+	var tag, id, from, to string
+	id = inReplyTo.ID()
+
+	switch t := inReplyTo.(type) {
+	case *Message:
+		tag = "message"
+		from = t.From
+		to = t.To
+	case *Presence:
+		tag = "presence"
+		from = t.From
+		to = t.To
+	case *IQ:
+		tag = "iq"
+		from = t.From
+		to = t.To
+	default:
+		// TODO what to do here?
+		return
+	}
+
+	if id != "" {
+		fmt.Fprintf(c, "<%s from='%s' to='%s' id='%s' type='error'>", tag, to, from, id) // We swap to and from
+	} else {
+		fmt.Fprintf(c, "<%s from='%s' to='%s' type='error'>", tag, to, from) // We swap to and from
+	}
+	fmt.Fprintf(c, "<error type='%s'>", typ)
+	enc := xml.NewEncoder(c)
+	for _, error := range errors {
+		enc.Encode(error) // TODO handle error
+	}
+	fmt.Fprintf(c, "</error></%s>", tag)
+}
+
 func (c *Connection) SubscribeStanzas(ch chan<- Stanza) {
 	c.subscribers.subscribe(ch)
 }
