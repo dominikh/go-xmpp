@@ -176,24 +176,24 @@ connectLoop:
 			if err != nil {
 				errors = append(errors, err)
 				continue
-			} else {
-				cookieChan := make(chan string)
-				cookieQuitChan := make(chan struct{})
-				go generateCookies(cookieChan, cookieQuitChan)
-				client = &Connection{
-					Conn:       c,
-					user:       user,
-					password:   password,
-					host:       host,
-					decoder:    xml.NewDecoder(c),
-					cookie:     cookieChan,
-					cookieQuit: cookieQuitChan,
-					callbacks:  make(map[string]chan *IQ),
-					extensions: extensions{m: make(map[int]xep.Interface)},
-				}
-
-				break connectLoop
 			}
+
+			cookieChan := make(chan string)
+			cookieQuitChan := make(chan struct{})
+			go generateCookies(cookieChan, cookieQuitChan)
+			client = &Connection{
+				Conn:       c,
+				user:       user,
+				password:   password,
+				host:       host,
+				decoder:    xml.NewDecoder(c),
+				cookie:     cookieChan,
+				cookieQuit: cookieQuitChan,
+				callbacks:  make(map[string]chan *IQ),
+				extensions: extensions{m: make(map[int]xep.Interface)},
+			}
+
+			break connectLoop
 		}
 	}
 
