@@ -118,17 +118,22 @@ type subscribers struct {
 	chans []chan<- Stanza
 }
 
-func (s *subscribers) send(stanza Stanza) {
+func (s *subscribers) send(stanza Stanza) (delivered bool) {
 	s.RLock()
 	defer s.RUnlock()
+
+	toSkip := len(s.chans)
 	for _, ch := range s.chans {
 		select {
 		case ch <- stanza:
 		default:
-			// TODO tell the server that we couldn't process the stanza
-			// wait | <resource-constraint>
+			toSkip--
 		}
 	}
+
+	// if toSkip == 0, none of the subscribers were able to receive the stanza, so
+	// we definitely couldn't process it
+	return toSkip != 0
 }
 
 func (s *subscribers) subscribe(ch chan<- Stanza) {
@@ -445,7 +450,10 @@ func (c *Connection) read() {
 			}
 			c.Unlock()
 		} else {
-			c.subscribers.send(nv)
+			delivered := c.subscribers.send(nv)
+			if !delivered {
+				c.SendError(nv, "wait", "", []XMPPError{ErrResourceConstraint{}})
+			}
 		}
 	}
 }
