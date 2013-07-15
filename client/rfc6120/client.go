@@ -452,7 +452,7 @@ func (c *Connection) read() {
 		} else {
 			delivered := c.subscribers.send(nv)
 			if !delivered {
-				c.SendError(nv, "wait", "", []XMPPError{ErrResourceConstraint{}})
+				c.SendError(nv, "wait", "", ErrResourceConstraint{})
 			}
 		}
 	}
@@ -702,7 +702,7 @@ func (c *Connection) SendPresence(p Presence) (cookie string, err error) {
 
 // TODO reconsider name, since it conflicts with the idea of sending
 // stream errors as opposed to stanza errors
-func (c *Connection) SendError(inReplyTo Stanza, typ string, text string, errors []XMPPError) {
+func (c *Connection) SendError(inReplyTo Stanza, typ string, text string, errors ...XMPPError) {
 	if inReplyTo.IsError() {
 		// 8.3.1: An entity that receives an error stanza MUST NOT
 		// respond to the stanza with a further error stanza; this
