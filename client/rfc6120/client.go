@@ -654,6 +654,8 @@ func xmlEscape(s string) string {
 
 // TODO error handling
 func (c *Connection) SendIQ(to, typ string, value interface{}) (chan *IQ, string) {
+	buf := &bytes.Buffer{}
+
 	cookie := c.getCookie()
 	reply := make(chan *IQ, 1)
 	c.Lock()
@@ -665,9 +667,11 @@ func (c *Connection) SendIQ(to, typ string, value interface{}) (chan *IQ, string
 		toAttr = "to='" + xmlEscape(to) + "'"
 	}
 
-	fmt.Fprintf(c, "<iq %s from='%s' type='%s' id='%s'>", toAttr, xmlEscape(c.jid), xmlEscape(typ), cookie)
-	xml.NewEncoder(c).Encode(value)
-	fmt.Fprintf(c, "</iq>")
+	fmt.Fprintf(buf, "<iq %s from='%s' type='%s' id='%s'>", toAttr, xmlEscape(c.jid), xmlEscape(typ), cookie)
+	xml.NewEncoder(buf).Encode(value)
+	fmt.Fprintf(buf, "</iq>")
+
+	io.Copy(c, buf)
 
 	return reply, cookie
 }
@@ -726,17 +730,20 @@ func (c *Connection) SendError(inReplyTo Stanza, typ string, text string, errors
 		return
 	}
 
+	buf := &bytes.Buffer{}
+
 	if id != "" {
-		fmt.Fprintf(c, "<%s from='%s' to='%s' id='%s' type='error'>", tag, to, from, id) // We swap to and from
+		fmt.Fprintf(buf, "<%s from='%s' to='%s' id='%s' type='error'>", tag, to, from, id) // We swap to and from
 	} else {
-		fmt.Fprintf(c, "<%s from='%s' to='%s' type='error'>", tag, to, from) // We swap to and from
+		fmt.Fprintf(buf, "<%s from='%s' to='%s' type='error'>", tag, to, from) // We swap to and from
 	}
-	fmt.Fprintf(c, "<error type='%s'>", typ)
-	enc := xml.NewEncoder(c)
+	fmt.Fprintf(buf, "<error type='%s'>", typ)
+	enc := xml.NewEncoder(buf)
 	for _, error := range errors {
 		enc.Encode(error) // TODO handle error
 	}
-	fmt.Fprintf(c, "</error></%s>", tag)
+	fmt.Fprintf(buf, "</error></%s>", tag)
+	io.Copy(c, buf)
 }
 
 func (c *Connection) SubscribeStanzas(ch chan<- Stanza) {
