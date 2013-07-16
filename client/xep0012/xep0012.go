@@ -36,7 +36,9 @@ func Wrap(c rfc6120.Client) *Connection {
 	discovery := conn.MustGetXEP(30).(*xep0030.Connection)
 	discovery.AddFeature("jabber:iq:last")
 
+	c.SubscribeStanzas(conn.stanzas)
 	go conn.read()
+
 	return conn
 }
 
