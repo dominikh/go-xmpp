@@ -417,6 +417,7 @@ func (c *Connection) read() {
 			for _, ch := range c.callbacks {
 				close(ch)
 			}
+			c.Unlock()
 			c.Close()
 			return
 		}
