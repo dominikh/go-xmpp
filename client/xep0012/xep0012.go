@@ -53,7 +53,7 @@ func (c *Connection) read() {
 }
 
 // Reply replies to the Last Activity query.
-func (t *LastActivityRequest) Reply(seconds uint64) {
+func Reply(t *LastActivityRequest, seconds uint64) {
 	t.c.SendIQReply(t.IQ, "result", struct {
 		XMLName xml.Name `xml:"jabber:iq:last query"`
 		Seconds uint64   `xml:"seconds,attr"`
