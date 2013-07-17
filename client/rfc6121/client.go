@@ -62,7 +62,7 @@ func (c *Connection) read() {
 				// TODO check 'from' ("Security Warning:
 				// Traditionally, a roster push included no 'from'
 				// address")
-				c.SendIQReply("", "result", stanza.ID(), nil)
+				c.SendIQReply(t, "result", nil)
 			}
 		case *rfc6120.Presence:
 			if t.Type == "subscribe" {

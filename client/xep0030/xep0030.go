@@ -52,7 +52,7 @@ func (c *Connection) read() {
 			if iq.Query.Space == "http://jabber.org/protocol/disco#info" && iq.Type == "get" {
 				// TODO support queries targetted at nodes
 				c.RLock()
-				c.SendIQReply(iq.From, "result", iq.ID(), struct {
+				c.SendIQReply(iq, "result", struct {
 					XMLName    xml.Name   `xml:"http://jabber.org/protocol/disco#info query"`
 					Identities []Identity `xml:"identity"`
 					Features   []Feature  `xml:"feature"`

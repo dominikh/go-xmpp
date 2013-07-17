@@ -85,7 +85,7 @@ func RegisterErrorType(space, local string, err XMPPError) {
 type Client interface {
 	io.Writer
 	SendIQ(to, typ string, value interface{}) (chan *IQ, string)
-	SendIQReply(to, typ, id string, value interface{})
+	SendIQReply(iq *IQ, typ string, value interface{})
 	SendPresence(p Presence) (cookie string, err error)
 	EmitStanza(s Stanza)
 	SubscribeStanzas(ch chan<- Stanza)
@@ -679,13 +679,13 @@ func (c *Connection) SendIQ(to, typ string, value interface{}) (chan *IQ, string
 }
 
 // TODO get rid of to and id arguments, use IQ value instead
-func (c *Connection) SendIQReply(to, typ, id string, value interface{}) {
+func (c *Connection) SendIQReply(iq *IQ, typ string, value interface{}) {
 	toAttr := ""
-	if len(to) > 0 {
-		toAttr = "to='" + xmlEscape(to) + "'"
+	if len(iq.From) > 0 {
+		toAttr = "to='" + xmlEscape(iq.From) + "'"
 	}
 
-	fmt.Fprintf(c, "<iq %s from='%s' type='%s' id='%s'>", toAttr, xmlEscape(c.jid), xmlEscape(typ), id)
+	fmt.Fprintf(c, "<iq %s from='%s' type='%s' id='%s'>", toAttr, xmlEscape(c.jid), xmlEscape(typ), iq.Id)
 	if value != nil {
 		xml.NewEncoder(c).Encode(value)
 	}
