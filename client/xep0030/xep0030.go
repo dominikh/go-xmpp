@@ -25,11 +25,9 @@ func Wrap(c rfc6120.Client) *Connection {
 	conn.AddFeature("http://jabber.org/protocol/disco#info")
 
 	c.SubscribeStanzas(conn.stanzas)
-
 	go conn.read()
 
 	c.RegisterXEP(30, conn)
-
 	return conn
 }
 
