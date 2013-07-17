@@ -1,7 +1,6 @@
 package rfc6121
 
 // TODO implement roster versioning
-// TODO implement pre-approval
 // TODO handle a roster, that keeps track of presence, the contacts
 // who are in it, etc
 
@@ -141,18 +140,40 @@ func (c *Connection) Unsubscribe(jid string) (cookie string, err error) {
 	// TODO handle error
 }
 
-func (c *Connection) ApproveSubscription(jid string) {
+func (c *Connection) ApproveSubscription(auth *AuthorizationRequest) {
+	c.SendPresence(rfc6120.Presence{
+		Header: rfc6120.Header{
+			To:   auth.From,
+			Type: "subscribed",
+		},
+	})
+}
+
+func (c *Connection) PreapproveSubscription(jid string) error {
+	if !c.Features().Includes("sub") {
+		// FIXME return error
+	}
+
 	c.SendPresence(rfc6120.Presence{
 		Header: rfc6120.Header{
 			To:   jid,
 			Type: "subscribed",
 		},
 	})
+
+	return nil
 }
 
-func (c *Connection) DenySubscription(jid string) {
-	// TODO document that this can also be used to revoke an existing
-	// subscription
+func (c *Connection) DenySubscription(auth *AuthorizationRequest) {
+	c.SendPresence(rfc6120.Presence{
+		Header: rfc6120.Header{
+			To:   auth.From,
+			Type: "unsubscribed",
+		},
+	})
+}
+
+func (c *Connection) RevokeSubscription(jid string) {
 	c.SendPresence(rfc6120.Presence{
 		Header: rfc6120.Header{
 			To:   jid,

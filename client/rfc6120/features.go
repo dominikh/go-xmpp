@@ -123,3 +123,7 @@ func (c *Connection) parseFeatures() {
 
 	c.features = features
 }
+
+func (c *Connection) Features() Features {
+	return c.features
+}

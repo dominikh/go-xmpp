@@ -93,6 +93,7 @@ type Client interface {
 	GetXEP(n int) (xep.Interface, bool)
 	MustGetXEP(n int) xep.Interface
 	JID() string
+	Features() Features
 	Close()
 }
 
