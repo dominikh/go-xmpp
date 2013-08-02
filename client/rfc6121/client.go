@@ -6,12 +6,9 @@ package rfc6121
 
 import (
 	"encoding/xml"
-	"github.com/davecgh/go-spew/spew"
 	"honnef.co/go/xmpp/client/rfc6120"
 	"net"
 )
-
-var _ = spew.Dump
 
 type Client interface {
 	rfc6120.Client
