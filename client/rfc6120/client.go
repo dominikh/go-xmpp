@@ -82,16 +82,20 @@ func RegisterErrorType(space, local string, err XMPPError) {
 	ErrorTypes[name] = err
 }
 
+type XEPRegistry interface {
+	RegisterXEP(n int, x xep.Interface, required ...int) bool
+	GetXEP(n int) (xep.Interface, bool)
+	MustGetXEP(n int) xep.Interface
+}
+
 type Client interface {
 	io.Writer
+	XEPRegistry
 	SendIQ(to, typ string, value interface{}) (chan *IQ, string)
 	SendIQReply(iq *IQ, typ string, value interface{})
 	SendPresence(p Presence) (cookie string, err error)
 	EmitStanza(s Stanza)
 	SubscribeStanzas(ch chan<- Stanza)
-	RegisterXEP(n int, x xep.Interface, required ...int) bool
-	GetXEP(n int) (xep.Interface, bool)
-	MustGetXEP(n int) xep.Interface
 	JID() string
 	Features() Features
 	Close()
