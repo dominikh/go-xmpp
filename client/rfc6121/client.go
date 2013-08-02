@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"github.com/davecgh/go-spew/spew"
 	"honnef.co/go/xmpp/client/rfc6120"
+	"net"
 )
 
 var _ = spew.Dump
@@ -49,6 +50,15 @@ func Dial(user, host, password string) (*Connection, []error, bool) {
 	}
 
 	return Wrap(c), errs, true
+}
+
+func DialOn(c net.Conn, user, host, password string) (*Connection, []error, bool) {
+	conn, errs, ok := rfc6120.DialOn(c, user, host, password)
+	if !ok {
+		return nil, errs, ok
+	}
+
+	return Wrap(conn), errs, true
 }
 
 type AuthorizationRequest rfc6120.Presence

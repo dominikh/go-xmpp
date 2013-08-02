@@ -237,6 +237,21 @@ func generateCookies(ch chan<- string, quit <-chan struct{}) {
 	}
 }
 
+func newConnection(c net.Conn) *connection {
+	cookieChan := make(chan string)
+	cookieQuitChan := make(chan struct{})
+	go generateCookies(cookieChan, cookieQuitChan)
+	return &connection{
+		Conn:        c,
+		decoder:     xml.NewDecoder(c),
+		cookie:      cookieChan,
+		cookieQuit:  cookieQuitChan,
+		callbacks:   make(map[string]chan *IQ),
+		XEPRegistry: &extensions{m: make(map[int]xep.Interface)},
+	}
+
+}
+
 func Dial(user, host, password string) (client Client, errors []error, ok bool) {
 	var conn *connection
 	addrs, errors := Resolve(host)
@@ -250,21 +265,10 @@ connectLoop:
 				continue
 			}
 
-			cookieChan := make(chan string)
-			cookieQuitChan := make(chan struct{})
-			go generateCookies(cookieChan, cookieQuitChan)
-			conn = &connection{
-				Conn:        c,
-				user:        user,
-				password:    password,
-				host:        host,
-				decoder:     xml.NewDecoder(c),
-				cookie:      cookieChan,
-				cookieQuit:  cookieQuitChan,
-				callbacks:   make(map[string]chan *IQ),
-				XEPRegistry: &extensions{m: make(map[int]xep.Interface)},
-			}
-
+			conn = newConnection(c)
+			conn.host = host
+			conn.user = user
+			conn.password = password
 			break connectLoop
 		}
 	}
@@ -273,6 +277,26 @@ connectLoop:
 		return nil, errors, false
 	}
 
+	moreErrors := conn.setUp()
+	errors = append(errors, moreErrors...)
+
+	return conn, errors, true
+}
+
+// DialOn works like Dial but expects an existing and open net.Conn to
+// use.
+func DialOn(c net.Conn, user, host, password string) (client Client, errors []error, ok bool) {
+	conn := newConnection(c)
+	conn.host = host
+	conn.user = user
+	conn.password = password
+
+	errors = conn.setUp()
+
+	return conn, errors, len(errors) == 0
+}
+
+func (conn *connection) setUp() []error {
 	// TODO error handling
 	for {
 		conn.openStream()
@@ -293,7 +317,7 @@ connectLoop:
 	go conn.read()
 	conn.bind()
 
-	return conn, errors, true
+	return nil
 }
 
 type Stanza interface {
