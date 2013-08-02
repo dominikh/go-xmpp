@@ -150,6 +150,7 @@ func (s *subscribers) subscribe(ch chan<- Stanza) {
 type Connection struct {
 	net.Conn
 	sync.Mutex
+	XEPRegistry
 	user       string
 	host       string
 	decoder    *xml.Decoder
@@ -162,26 +163,16 @@ type Connection struct {
 	closing    bool
 	// TODO reconsider choice of structure when we allow unsubscribing
 	subscribers subscribers
-	extensions  extensions
 }
 
-type extensions struct {
-	sync.RWMutex
-	m map[int]xep.Interface
+type Extensions struct {
+	mutex sync.RWMutex
+	m     map[int]xep.Interface
 }
 
-func (e *extensions) get(n int) (xep.Interface, bool) {
-	e.RLock()
-	defer e.RUnlock()
-
-	x, ok := e.m[n]
-
-	return x, ok
-}
-
-func (e *extensions) register(n int, x xep.Interface, required ...int) bool {
-	e.Lock()
-	defer e.Unlock()
+func (e *Extensions) RegisterXEP(n int, x xep.Interface, required ...int) bool {
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
 
 	for _, req := range required {
 		if _, ok := e.m[req]; !ok {
@@ -193,16 +184,17 @@ func (e *extensions) register(n int, x xep.Interface, required ...int) bool {
 	return true
 }
 
-func (c *Connection) RegisterXEP(n int, x xep.Interface, required ...int) bool {
-	return c.extensions.register(n, x, required...)
+func (e *Extensions) GetXEP(n int) (xep.Interface, bool) {
+	e.mutex.RLock()
+	defer e.mutex.RUnlock()
+
+	x, ok := e.m[n]
+
+	return x, ok
 }
 
-func (c *Connection) GetXEP(n int) (xep.Interface, bool) {
-	return c.extensions.get(n)
-}
-
-func (c *Connection) MustGetXEP(n int) xep.Interface {
-	x, ok := c.extensions.get(n)
+func (e *Extensions) MustGetXEP(n int) xep.Interface {
+	x, ok := e.GetXEP(n)
 	if !ok {
 		panic(fmt.Sprintf("XEP-%04d is not registered", n))
 	}
@@ -242,15 +234,15 @@ connectLoop:
 			cookieQuitChan := make(chan struct{})
 			go generateCookies(cookieChan, cookieQuitChan)
 			client = &Connection{
-				Conn:       c,
-				user:       user,
-				password:   password,
-				host:       host,
-				decoder:    xml.NewDecoder(c),
-				cookie:     cookieChan,
-				cookieQuit: cookieQuitChan,
-				callbacks:  make(map[string]chan *IQ),
-				extensions: extensions{m: make(map[int]xep.Interface)},
+				Conn:        c,
+				user:        user,
+				password:    password,
+				host:        host,
+				decoder:     xml.NewDecoder(c),
+				cookie:      cookieChan,
+				cookieQuit:  cookieQuitChan,
+				callbacks:   make(map[string]chan *IQ),
+				XEPRegistry: &Extensions{m: make(map[int]xep.Interface)},
 			}
 
 			break connectLoop
