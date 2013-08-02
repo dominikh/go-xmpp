@@ -69,6 +69,15 @@ type XMPPError interface {
 	Text() string
 }
 
+// RegisterErrorType is used to register errors that are not covered
+// by the core specification, like they are used by various XEPs.
+//
+// Errors are specified by their namespace, tag name and a struct to
+// hold additional information.
+//
+// This function is not thread-safe. It is advised to call it from a
+// package's init function. Trying to register the same error twice
+// will panic. The provided error must not be a pointer.
 func RegisterErrorType(space, local string, err XMPPError) {
 	if reflect.ValueOf(err).Kind() == reflect.Ptr {
 		panic("Must not call RegisterErrorType with pointer type")
