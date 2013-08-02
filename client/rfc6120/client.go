@@ -348,6 +348,7 @@ type Message struct {
 	Body    string `xml:"body"` // TODO omitempty?
 	Error   *Error `xml:"error,omitempty"`
 	Thread  string `xml:"thread,omitempty"`
+	Inner   []byte `xml:",innerxml"`
 }
 
 type Text struct {
@@ -365,7 +366,7 @@ type Presence struct {
 	Status   string `xml:"status,omitempty"`
 	Priority int    `xml:"priority,omitempty"`
 	Error    *Error `xml:"error,omitempty"`
-	// TODO support other tags inside the presence
+	Inner    []byte `xml:",innerxml"`
 }
 
 func (p Presence) IsError() bool {
