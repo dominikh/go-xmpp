@@ -165,14 +165,14 @@ type connection struct {
 	subscribers subscribers
 }
 
-type Extensions struct {
-	mutex sync.RWMutex
-	m     map[int]xep.Interface
+type extensions struct {
+	sync.RWMutex
+	m map[int]xep.Interface
 }
 
-func (e *Extensions) RegisterXEP(n int, x xep.Interface, required ...int) bool {
-	e.mutex.Lock()
-	defer e.mutex.Unlock()
+func (e *extensions) RegisterXEP(n int, x xep.Interface, required ...int) bool {
+	e.Lock()
+	defer e.Unlock()
 
 	for _, req := range required {
 		if _, ok := e.m[req]; !ok {
@@ -184,16 +184,16 @@ func (e *Extensions) RegisterXEP(n int, x xep.Interface, required ...int) bool {
 	return true
 }
 
-func (e *Extensions) GetXEP(n int) (xep.Interface, bool) {
-	e.mutex.RLock()
-	defer e.mutex.RUnlock()
+func (e *extensions) GetXEP(n int) (xep.Interface, bool) {
+	e.RLock()
+	defer e.RUnlock()
 
 	x, ok := e.m[n]
 
 	return x, ok
 }
 
-func (e *Extensions) MustGetXEP(n int) xep.Interface {
+func (e *extensions) MustGetXEP(n int) xep.Interface {
 	x, ok := e.GetXEP(n)
 	if !ok {
 		panic(fmt.Sprintf("XEP-%04d is not registered", n))
@@ -243,7 +243,7 @@ connectLoop:
 				cookie:      cookieChan,
 				cookieQuit:  cookieQuitChan,
 				callbacks:   make(map[string]chan *IQ),
-				XEPRegistry: &Extensions{m: make(map[int]xep.Interface)},
+				XEPRegistry: &extensions{m: make(map[int]xep.Interface)},
 			}
 
 			break connectLoop
