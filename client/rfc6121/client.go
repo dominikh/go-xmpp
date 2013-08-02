@@ -20,8 +20,8 @@ type Client interface {
 	RemoveFromRoster(jid string) error
 	Subscribe(jid string) (cookie string, err error)
 	Unsubscribe(jid string) (cookie string, err error)
-	ApproveSubscription(jid string)
-	DenySubscription(jid string)
+	ApproveSubscription(auth *AuthorizationRequest)
+	DenySubscription(auth *AuthorizationRequest)
 	BecomeAvailable()
 	BecomeUnavailable()
 	SendMessage(typ, to, message string)
