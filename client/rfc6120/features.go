@@ -78,7 +78,7 @@ func (fs Features) RequiresTLS() bool {
 	return false
 }
 
-func (c *Connection) parseFeatures() {
+func (c *connection) parseFeatures() {
 	features := make(Features)
 
 	c.nextStartElement() // FIXME flow. this skips over the stream
@@ -124,6 +124,6 @@ func (c *Connection) parseFeatures() {
 	c.features = features
 }
 
-func (c *Connection) Features() Features {
+func (c *connection) Features() Features {
 	return c.features
 }
