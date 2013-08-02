@@ -10,6 +10,8 @@ import (
 	"net"
 )
 
+var _ Client = &Connection{}
+
 type Client interface {
 	rfc6120.Client
 	GetRoster() Roster

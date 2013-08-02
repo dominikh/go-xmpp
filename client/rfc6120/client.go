@@ -24,6 +24,8 @@ import (
 	"sync"
 )
 
+var _ Client = &Connection{}
+
 const (
 	nsStream  = "http://etherx.jabber.org/streams"
 	nsTLS     = "urn:ietf:params:xml:ns:xmpp-tls"
