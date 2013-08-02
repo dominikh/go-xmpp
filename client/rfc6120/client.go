@@ -82,9 +82,19 @@ func RegisterErrorType(space, local string, err XMPPError) {
 	ErrorTypes[name] = err
 }
 
+// A XEPRegistry is used by XEPs to register themselves with a client.
 type XEPRegistry interface {
+	// RegisterXEP registers a XEP and reports success. If any of the
+	// dependencies haven't been registered, false will be returned.
 	RegisterXEP(n int, x xep.Interface, required ...int) bool
+
+	// TODO do we need a MustRegisterXEP?
+
+	// GetXEP tries to return a registered XEP.
 	GetXEP(n int) (xep.Interface, bool)
+
+	// MustGetXEP behaves like GetXEP but panics if the XEP hasn't
+	// been registered.
 	MustGetXEP(n int) xep.Interface
 }
 
