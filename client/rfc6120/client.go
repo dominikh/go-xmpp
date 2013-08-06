@@ -368,7 +368,7 @@ func (c *Conn) Dial() (errors []error, ok bool) {
 	moreErrors := c.setUp()
 	errors = append(errors, moreErrors...)
 
-	return errors, true
+	return errors, len(moreErrors) == 0
 }
 
 // Dial connects to an XMPP server and authenticates with the provided
