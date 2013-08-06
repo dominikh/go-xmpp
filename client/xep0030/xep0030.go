@@ -4,6 +4,7 @@ import (
 	"honnef.co/go/xmpp/client/rfc6120"
 
 	"encoding/xml"
+	"honnef.co/go/xmpp/shared/xep"
 	"sync"
 )
 
@@ -16,11 +17,11 @@ type Connection struct {
 }
 
 func init() {
-	rfc6120.RegisterXEP(30, Wrap)
+	rfc6120.RegisterXEP(30, wrap)
 }
 
 // TODO reconsider the `Wrap` name
-func Wrap(c rfc6120.Client) error {
+func wrap(c rfc6120.Client) (xep.Interface, error) {
 	conn := &Connection{
 		Client:  c,
 		stanzas: make(chan rfc6120.Stanza, 100),
@@ -31,7 +32,7 @@ func Wrap(c rfc6120.Client) error {
 	c.SubscribeStanzas(conn.stanzas)
 	go conn.read()
 
-	return c.RegisterXEP(30, conn)
+	return conn, nil
 }
 
 func (c *Connection) AddIdentity(id Identity) {

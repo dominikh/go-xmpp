@@ -12,6 +12,7 @@ import (
 	"encoding/xml"
 	"honnef.co/go/xmpp/client/rfc6120"
 	"honnef.co/go/xmpp/client/xep0030"
+	"honnef.co/go/xmpp/shared/xep"
 )
 
 type Connection struct {
@@ -25,17 +26,13 @@ type LastActivityRequest struct {
 }
 
 func init() {
-	rfc6120.RegisterXEP(12, Wrap)
+	rfc6120.RegisterXEP(12, wrap, 30)
 }
 
-func Wrap(c rfc6120.Client) error {
+func wrap(c rfc6120.Client) (xep.Interface, error) {
 	conn := &Connection{
 		Client:  c,
 		stanzas: make(chan rfc6120.Stanza, 100),
-	}
-
-	if err := c.RegisterXEP(12, conn, 30); err != nil {
-		return err
 	}
 
 	discovery := conn.MustGetXEP(30).(*xep0030.Connection)
@@ -44,7 +41,7 @@ func Wrap(c rfc6120.Client) error {
 	c.SubscribeStanzas(conn.stanzas)
 	go conn.read()
 
-	return nil
+	return conn, nil
 }
 
 func (c *Connection) read() {
