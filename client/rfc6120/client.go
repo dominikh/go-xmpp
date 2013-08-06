@@ -268,6 +268,15 @@ func (c *Conn) RegisterXEP(n int) (pxep.Interface, error) {
 	return conn, nil
 }
 
+func (c *Conn) MustRegisterXEP(n int) pxep.Interface {
+	ret, err := c.RegisterXEP(n)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return ret
+}
+
 func (c *Conn) GetXEP(n int) (pxep.Interface, bool) {
 	c.extensions.RLock()
 	defer c.extensions.RUnlock()
