@@ -24,7 +24,7 @@ import (
 	"sync"
 )
 
-var _ Client = &Connection{}
+var _ Client = &Conn{}
 
 const (
 	nsStream  = "http://etherx.jabber.org/streams"
@@ -38,7 +38,7 @@ const (
 type XEPWrapper func(Client) (pxep.Interface, error)
 
 var SupportedMechanisms = []string{"PLAIN"}
-var ErrorTypes = make(map[xml.Name]XMPPError)
+var ErrTypes = make(map[xml.Name]XMPPError)
 var xeps = make(map[int]xep)
 
 func init() {
@@ -88,11 +88,11 @@ func RegisterErrorType(space, local string, err XMPPError) {
 	}
 
 	name := xml.Name{Space: space, Local: local}
-	if _, ok := ErrorTypes[name]; ok {
+	if _, ok := ErrTypes[name]; ok {
 		panic(fmt.Sprintf("An error type for '%s %s' has already been registered", space, local))
 	}
 
-	ErrorTypes[name] = err
+	ErrTypes[name] = err
 }
 
 type xep struct {
@@ -192,10 +192,10 @@ func (s *DroppingEmitter) Subscribe(ch chan<- Stanza) {
 	s.chans = append(s.chans, ch)
 }
 
-type Connection struct {
+type Conn struct {
 	net.Conn
 	extensions *extensions
-	mutex      sync.Mutex
+	mu         sync.Mutex
 	user       string
 	host       string
 	decoder    *xml.Decoder
@@ -237,7 +237,7 @@ func (d DependencyError) Error() string {
 		d.XEP, d.Missing)
 }
 
-func (c *Connection) RegisterXEP(n int) (pxep.Interface, error) {
+func (c *Conn) RegisterXEP(n int) (pxep.Interface, error) {
 	// Do not register the same XEP twice
 	if conn, ok := c.extensions.get(n); ok {
 		return conn, nil
@@ -268,7 +268,7 @@ func (c *Connection) RegisterXEP(n int) (pxep.Interface, error) {
 	return conn, nil
 }
 
-func (c *Connection) GetXEP(n int) (pxep.Interface, bool) {
+func (c *Conn) GetXEP(n int) (pxep.Interface, bool) {
 	c.extensions.RLock()
 	defer c.extensions.RUnlock()
 
@@ -277,7 +277,7 @@ func (c *Connection) GetXEP(n int) (pxep.Interface, bool) {
 	return x, ok
 }
 
-func (c *Connection) MustGetXEP(n int) pxep.Interface {
+func (c *Conn) MustGetXEP(n int) pxep.Interface {
 	x, ok := c.GetXEP(n)
 	if !ok {
 		panic(fmt.Sprintf("XEP-%04d is not registered", n))
@@ -286,7 +286,7 @@ func (c *Connection) MustGetXEP(n int) pxep.Interface {
 	return x
 }
 
-func (c *Connection) EmitStanza(stanza Stanza) {
+func (c *Conn) EmitStanza(stanza Stanza) {
 	c.Emitter.Emit(stanza)
 }
 
@@ -302,18 +302,18 @@ func generateCookies(ch chan<- string, quit <-chan struct{}) {
 	}
 }
 
-// NewConnection creates a new connection. After setting user name,
+// NewConn creates a new connection. After setting user name,
 // password, host and optionally more settings, Dial on the connection
 // can be used to establish a connection.
 //
 // If you want to use a default connection without specifying any of
 // the optional settings, consider using the package-level Dial
 // function instead.
-func NewConnection() *Connection {
+func NewConn() *Conn {
 	cookieChan := make(chan string)
 	cookieQuitChan := make(chan struct{})
 	go generateCookies(cookieChan, cookieQuitChan)
-	return &Connection{
+	return &Conn{
 		cookie:     cookieChan,
 		cookieQuit: cookieQuitChan,
 		callbacks:  make(map[string]chan *IQ),
@@ -332,7 +332,7 @@ func NewConnection() *Connection {
 // If you want a default connection and do not want to set specific
 // options like the emitter, consider using the package-level function
 // Dial instead.
-func (c *Connection) Dial() (errors []error, ok bool) {
+func (c *Conn) Dial() (errors []error, ok bool) {
 	if c.Conn == nil {
 		addrs, errors := Resolve(c.host)
 		connected := false
@@ -365,11 +365,11 @@ func (c *Connection) Dial() (errors []error, ok bool) {
 // Dial connects to an XMPP server and authenticates with the provided
 // user name and password.
 //
-// A default Connection with default values for emitter etc will be
+// A default Conn with default values for emitter etc will be
 // created. If you need more control over the created connection, use
-// NewConnection instead.
+// NewConn instead.
 func Dial(user, host, password string) (client Client, errors []error, ok bool) {
-	c := NewConnection()
+	c := NewConn()
 	c.host = host
 	c.user = user
 	c.password = password
@@ -378,27 +378,27 @@ func Dial(user, host, password string) (client Client, errors []error, ok bool) 
 	return c, errs, ok
 }
 
-func (conn *Connection) setUp() []error {
-	conn.decoder = xml.NewDecoder(conn)
+func (c *Conn) setUp() []error {
+	c.decoder = xml.NewDecoder(c)
 	// TODO error handling
 	for {
-		conn.openStream()
-		conn.receiveStream()
-		conn.parseFeatures()
-		if conn.features.Includes("starttls") {
-			conn.startTLS() // TODO handle error
+		c.openStream()
+		c.receiveStream()
+		c.parseFeatures()
+		if c.features.Includes("starttls") {
+			c.startTLS() // TODO handle error
 			continue
 		}
 
-		if conn.features.Requires("sasl") {
-			conn.sasl()
+		if c.features.Requires("sasl") {
+			c.sasl()
 			continue
 		}
 		break
 	}
 
-	go conn.read()
-	conn.bind()
+	go c.read()
+	c.bind()
 
 	return nil
 }
@@ -500,7 +500,7 @@ func (err Error) Errors() []XMPPError {
 		}
 
 		if start, ok := t.(xml.StartElement); ok {
-			errType, ok := ErrorTypes[start.Name]
+			errType, ok := ErrTypes[start.Name]
 			if !ok {
 				// TODO stuff it into an "unrecognized error" struct or something
 				continue
@@ -529,20 +529,20 @@ func (streamError) IsError() bool {
 	return true
 }
 
-func (c *Connection) JID() string {
+func (c *Conn) JID() string {
 	return c.jid
 }
 
-func (c *Connection) read() {
+func (c *Conn) read() {
 	for {
 		t, _ := c.nextStartElement()
 
 		if t == nil {
-			c.mutex.Lock()
+			c.mu.Lock()
 			for _, ch := range c.callbacks {
 				close(ch)
 			}
-			c.mutex.Unlock()
+			c.mu.Unlock()
 			c.Close()
 			return
 		}
@@ -569,12 +569,12 @@ func (c *Connection) read() {
 		// them. how do we want to present such kinds of errors to the
 		// user?
 		if iq, ok := nv.(*IQ); ok && (iq.Type == "result" || iq.Type == "error") {
-			c.mutex.Lock()
+			c.mu.Lock()
 			if ch, ok := c.callbacks[nv.ID()]; ok {
 				ch <- iq
 				delete(c.callbacks, nv.ID())
 			}
-			c.mutex.Unlock()
+			c.mu.Unlock()
 		} else {
 			delivered := c.Emitter.Emit(nv)
 			if !delivered {
@@ -584,11 +584,11 @@ func (c *Connection) read() {
 	}
 }
 
-func (c *Connection) getCookie() string {
+func (c *Conn) getCookie() string {
 	return <-c.cookie
 }
 
-func (c *Connection) bind() {
+func (c *Conn) bind() {
 	// TODO support binding to a user-specified resource
 	// TODO handle error cases
 
@@ -606,12 +606,12 @@ func (c *Connection) bind() {
 	c.jid = bind.JID
 }
 
-func (c *Connection) reset() {
+func (c *Conn) reset() {
 	c.decoder = xml.NewDecoder(c.Conn)
 	c.features = nil
 }
 
-func (c *Connection) sasl() {
+func (c *Conn) sasl() {
 	payload := fmt.Sprintf("\x00%s\x00%s", c.user, c.password)
 	payloadb64 := base64.StdEncoding.EncodeToString([]byte(payload))
 	fmt.Fprintf(c, "<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>%s</auth>", payloadb64)
@@ -625,7 +625,7 @@ func (c *Connection) sasl() {
 	// TODO actually determine which mechanism we can use, use interfaces etc to call it
 }
 
-func (c *Connection) startTLS() error {
+func (c *Conn) startTLS() error {
 	fmt.Fprint(c, "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>")
 	t, _ := c.nextStartElement() // FIXME error handling
 	if t.Name.Local != "proceed" {
@@ -655,7 +655,7 @@ func (c *Connection) startTLS() error {
 
 // TODO Move this outside of client. This function will be used by
 // servers, too.
-func (c *Connection) nextStartElement() (*xml.StartElement, error) {
+func (c *Conn) nextStartElement() (*xml.StartElement, error) {
 	for {
 		t, err := c.decoder.Token()
 		if err != nil {
@@ -673,7 +673,7 @@ func (c *Connection) nextStartElement() (*xml.StartElement, error) {
 	}
 }
 
-func (c *Connection) nextToken() (xml.Token, error) {
+func (c *Conn) nextToken() (xml.Token, error) {
 	return c.decoder.Token()
 }
 
@@ -686,7 +686,7 @@ func (e UnexpectedMessage) Error() string {
 }
 
 // TODO return error of Fprintf
-func (c *Connection) openStream() {
+func (c *Conn) openStream() {
 	// TODO consider not including the JID if the connection isn't encrypted yet
 	// TODO configurable xml:lang
 	fmt.Fprintf(c, "<?xml version='1.0' encoding='UTF-8'?><stream:stream from='%s@%s' to='%s' version='1.0' xml:lang='en' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>",
@@ -701,7 +701,7 @@ func (e UnsupportedVersion) Error() string {
 	return "Unsupported XMPP version: " + e.Version
 }
 
-func (c *Connection) receiveStream() error {
+func (c *Conn) receiveStream() error {
 	t, err := c.nextStartElement() // TODO error handling
 	if err != nil {
 		return err
@@ -740,7 +740,7 @@ func (c *Connection) receiveStream() error {
 	return nil
 }
 
-func (c *Connection) Close() {
+func (c *Conn) Close() {
 	if c.closing {
 		// Terminate TCP connection
 		c.Conn.Close()
@@ -779,14 +779,14 @@ func xmlEscape(s string) string {
 }
 
 // TODO error handling
-func (c *Connection) SendIQ(to, typ string, value interface{}) (chan *IQ, string) {
+func (c *Conn) SendIQ(to, typ string, value interface{}) (chan *IQ, string) {
 	buf := &bytes.Buffer{}
 
 	cookie := c.getCookie()
 	reply := make(chan *IQ, 1)
-	c.mutex.Lock()
+	c.mu.Lock()
 	c.callbacks[cookie] = reply
-	c.mutex.Unlock()
+	c.mu.Unlock()
 
 	toAttr := ""
 	if len(to) > 0 {
@@ -803,7 +803,7 @@ func (c *Connection) SendIQ(to, typ string, value interface{}) (chan *IQ, string
 }
 
 // TODO get rid of to and id arguments, use IQ value instead
-func (c *Connection) SendIQReply(iq *IQ, typ string, value interface{}) {
+func (c *Conn) SendIQReply(iq *IQ, typ string, value interface{}) {
 	toAttr := ""
 	if len(iq.From) > 0 {
 		toAttr = "to='" + xmlEscape(iq.From) + "'"
@@ -817,7 +817,7 @@ func (c *Connection) SendIQReply(iq *IQ, typ string, value interface{}) {
 
 }
 
-func (c *Connection) SendPresence(p Presence) (cookie string, err error) {
+func (c *Conn) SendPresence(p Presence) (cookie string, err error) {
 	// TODO do we need to store the cookie somewhere? present the user with a channel?
 	// TODO document that we set the ID
 	p.Id = c.getCookie()
@@ -828,7 +828,7 @@ func (c *Connection) SendPresence(p Presence) (cookie string, err error) {
 
 // TODO reconsider name, since it conflicts with the idea of sending
 // stream errors as opposed to stanza errors
-func (c *Connection) SendError(inReplyTo Stanza, typ string, text string, errors ...XMPPError) {
+func (c *Conn) SendError(inReplyTo Stanza, typ string, text string, errors ...XMPPError) {
 	if inReplyTo.IsError() {
 		// 8.3.1: An entity that receives an error stanza MUST NOT
 		// respond to the stanza with a further error stanza; this
@@ -872,6 +872,6 @@ func (c *Connection) SendError(inReplyTo Stanza, typ string, text string, errors
 	io.Copy(c, buf)
 }
 
-func (c *Connection) SubscribeStanzas(ch chan<- Stanza) {
+func (c *Conn) SubscribeStanzas(ch chan<- Stanza) {
 	c.Emitter.Subscribe(ch)
 }
