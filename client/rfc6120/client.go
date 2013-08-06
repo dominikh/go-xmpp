@@ -39,7 +39,7 @@ type XEPWrapper func(Client) (pxep.Interface, error)
 
 var SupportedMechanisms = []string{"PLAIN"}
 var ErrorTypes = make(map[xml.Name]XMPPError)
-var XEPs = make(map[int]xep)
+var xeps = make(map[int]xep)
 
 func init() {
 	// We're using RegisterErrorType instead of directly populating
@@ -101,11 +101,11 @@ type xep struct {
 }
 
 func RegisterXEP(n int, fn XEPWrapper, required ...int) {
-	if _, ok := XEPs[n]; ok {
+	if _, ok := xeps[n]; ok {
 		panic(fmt.Sprintf("XEP %d has already been registered", n))
 	}
 
-	XEPs[n] = xep{fn, required}
+	xeps[n] = xep{fn, required}
 }
 
 type Client interface {
@@ -230,7 +230,7 @@ func (c *Connection) RegisterXEP(n int) (pxep.Interface, error) {
 		return conn, nil
 	}
 
-	xep, ok := XEPs[n]
+	xep, ok := xeps[n]
 	if !ok {
 		return nil, DependencyError{n, n}
 	}
