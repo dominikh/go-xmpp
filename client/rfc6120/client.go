@@ -161,15 +161,15 @@ type Emitter interface {
 // send to each individual subscriber and drops stanzas if the
 // subscriber isn't ready to receive.
 type DroppingEmitter struct {
-	sync.RWMutex
+	mu    sync.RWMutex
 	chans []chan<- Stanza
 }
 
 // Emit sends a stanza to all subscribers and reports whether at least
 // one of them was able to receive it.
 func (s *DroppingEmitter) Emit(stanza Stanza) (delivered bool) {
-	s.RLock()
-	defer s.RUnlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	toSkip := len(s.chans)
 	for _, ch := range s.chans {
@@ -187,8 +187,8 @@ func (s *DroppingEmitter) Emit(stanza Stanza) (delivered bool) {
 
 // Subscribe adds a subscriber.
 func (s *DroppingEmitter) Subscribe(ch chan<- Stanza) {
-	s.Lock()
-	defer s.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.chans = append(s.chans, ch)
 }
 
