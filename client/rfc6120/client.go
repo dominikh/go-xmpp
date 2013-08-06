@@ -149,12 +149,25 @@ func findCompatibleMechanism(ours, theirs []string) string {
 	return ""
 }
 
-type subscribers struct {
+// An Emitter is used to send incoming stanzas to all subscribers. See
+// DroppingEmitter for the default emitter used.
+type Emitter interface {
+	Emit(stanza Stanza) (delivered bool)
+	Subscribe(ch chan<- Stanza)
+	// TODO consider adding Unsubscribe
+}
+
+// DroppingEmitter is a basic emitter that attempts a non-blocking
+// send to each individual subscriber and drops stanzas if the
+// subscriber isn't ready to receive.
+type DroppingEmitter struct {
 	sync.RWMutex
 	chans []chan<- Stanza
 }
 
-func (s *subscribers) send(stanza Stanza) (delivered bool) {
+// Emit sends a stanza to all subscribers and reports whether at least
+// one of them was able to receive it.
+func (s *DroppingEmitter) Emit(stanza Stanza) (delivered bool) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -172,7 +185,8 @@ func (s *subscribers) send(stanza Stanza) (delivered bool) {
 	return toSkip != 0
 }
 
-func (s *subscribers) subscribe(ch chan<- Stanza) {
+// Subscribe adds a subscriber.
+func (s *DroppingEmitter) Subscribe(ch chan<- Stanza) {
 	s.Lock()
 	defer s.Unlock()
 	s.chans = append(s.chans, ch)
@@ -193,7 +207,7 @@ type Connection struct {
 	callbacks  map[string]chan *IQ
 	closing    bool
 	// TODO reconsider choice of structure when we allow unsubscribing
-	subscribers subscribers
+	Emitter Emitter
 }
 
 type extensions struct {
@@ -274,7 +288,7 @@ func (c *Connection) MustGetXEP(n int) pxep.Interface {
 }
 
 func (c *Connection) EmitStanza(stanza Stanza) {
-	c.subscribers.send(stanza)
+	c.Emitter.Emit(stanza)
 }
 
 func generateCookies(ch chan<- string, quit <-chan struct{}) {
@@ -300,6 +314,7 @@ func newConnection(c net.Conn) *Connection {
 		cookieQuit: cookieQuitChan,
 		callbacks:  make(map[string]chan *IQ),
 		extensions: &extensions{m: make(map[int]pxep.Interface)},
+		Emitter:    &DroppingEmitter{},
 	}
 
 }
@@ -545,7 +560,7 @@ func (c *Connection) read() {
 			}
 			c.mutex.Unlock()
 		} else {
-			delivered := c.subscribers.send(nv)
+			delivered := c.Emitter.Emit(nv)
 			if !delivered {
 				c.SendError(nv, "wait", "", ErrResourceConstraint{})
 			}
@@ -842,5 +857,5 @@ func (c *Connection) SendError(inReplyTo Stanza, typ string, text string, errors
 }
 
 func (c *Connection) SubscribeStanzas(ch chan<- Stanza) {
-	c.subscribers.subscribe(ch)
+	c.Emitter.Subscribe(ch)
 }
