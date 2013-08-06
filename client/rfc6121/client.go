@@ -7,7 +7,6 @@ package rfc6121
 import (
 	"encoding/xml"
 	"honnef.co/go/xmpp/client/rfc6120"
-	"net"
 )
 
 var _ Client = &Connection{}
@@ -40,24 +39,6 @@ func Wrap(c rfc6120.Client) *Connection {
 	go conn.read()
 	c.SubscribeStanzas(conn.stanzas)
 	return conn
-}
-
-func Dial(user, host, password string) (*Connection, []error, bool) {
-	c, errs, ok := rfc6120.Dial(user, host, password)
-	if !ok {
-		return nil, errs, ok
-	}
-
-	return Wrap(c), errs, true
-}
-
-func DialOn(c net.Conn, user, host, password string) (*Connection, []error, bool) {
-	conn, errs, ok := rfc6120.DialOn(c, user, host, password)
-	if !ok {
-		return nil, errs, ok
-	}
-
-	return Wrap(conn), errs, true
 }
 
 type AuthorizationRequest rfc6120.Presence

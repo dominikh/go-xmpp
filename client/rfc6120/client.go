@@ -206,8 +206,7 @@ type Connection struct {
 	jid        string
 	callbacks  map[string]chan *IQ
 	closing    bool
-	// TODO reconsider choice of structure when we allow unsubscribing
-	Emitter Emitter
+	Emitter    Emitter
 }
 
 type extensions struct {
@@ -303,13 +302,18 @@ func generateCookies(ch chan<- string, quit <-chan struct{}) {
 	}
 }
 
-func newConnection(c net.Conn) *Connection {
+// NewConnection creates a new connection. After setting user name,
+// password, host and optionally more settings, Dial on the connection
+// can be used to establish a connection.
+//
+// If you want to use a default connection without specifying any of
+// the optional settings, consider using the package-level Dial
+// function instead.
+func NewConnection() *Connection {
 	cookieChan := make(chan string)
 	cookieQuitChan := make(chan struct{})
 	go generateCookies(cookieChan, cookieQuitChan)
 	return &Connection{
-		Conn:       c,
-		decoder:    xml.NewDecoder(c),
 		cookie:     cookieChan,
 		cookieQuit: cookieQuitChan,
 		callbacks:  make(map[string]chan *IQ),
@@ -319,51 +323,63 @@ func newConnection(c net.Conn) *Connection {
 
 }
 
-func Dial(user, host, password string) (client Client, errors []error, ok bool) {
-	var conn *Connection
-	addrs, errors := Resolve(host)
+// Dial uses the information in the connection (user name, password,
+// host) to connect to an XMPP server.
+//
+// If the Conn field is nil, Dial with resolve the address and open a
+// TCP connection, otherwise the existing connection will be used.
+//
+// If you want a default connection and do not want to set specific
+// options like the emitter, consider using the package-level function
+// Dial instead.
+func (c *Connection) Dial() (errors []error, ok bool) {
+	if c.Conn == nil {
+		addrs, errors := Resolve(c.host)
+		connected := false
+	connectLoop:
+		for _, addr := range addrs {
+			for _, ip := range addr.IPs {
+				conn, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: ip, Port: addr.Port})
+				if err != nil {
+					errors = append(errors, err)
+					continue
+				}
 
-connectLoop:
-	for _, addr := range addrs {
-		for _, ip := range addr.IPs {
-			c, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: ip, Port: addr.Port})
-			if err != nil {
-				errors = append(errors, err)
-				continue
+				c.Conn = conn
+				connected = true
+				break connectLoop
 			}
+		}
 
-			conn = newConnection(c)
-			conn.host = host
-			conn.user = user
-			conn.password = password
-			break connectLoop
+		if !connected {
+			return errors, false
 		}
 	}
 
-	if conn == nil {
-		return nil, errors, false
-	}
-
-	moreErrors := conn.setUp()
+	moreErrors := c.setUp()
 	errors = append(errors, moreErrors...)
 
-	return conn, errors, true
+	return errors, true
 }
 
-// DialOn works like Dial but expects an existing and open net.Conn to
-// use.
-func DialOn(c net.Conn, user, host, password string) (client Client, errors []error, ok bool) {
-	conn := newConnection(c)
-	conn.host = host
-	conn.user = user
-	conn.password = password
+// Dial connects to an XMPP server and authenticates with the provided
+// user name and password.
+//
+// A default Connection with default values for emitter etc will be
+// created. If you need more control over the created connection, use
+// NewConnection instead.
+func Dial(user, host, password string) (client Client, errors []error, ok bool) {
+	c := NewConnection()
+	c.host = host
+	c.user = user
+	c.password = password
 
-	errors = conn.setUp()
-
-	return conn, errors, len(errors) == 0
+	errs, ok := c.Dial()
+	return c, errs, ok
 }
 
 func (conn *Connection) setUp() []error {
+	conn.decoder = xml.NewDecoder(conn)
 	// TODO error handling
 	for {
 		conn.openStream()
