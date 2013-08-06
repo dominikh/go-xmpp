@@ -36,8 +36,8 @@ const (
 )
 
 var SupportedMechanisms = []string{"PLAIN"}
-
 var ErrorTypes = make(map[xml.Name]XMPPError)
+var XEPs = make(map[int]func(Client) error)
 
 func init() {
 	// We're using RegisterErrorType instead of directly populating
@@ -93,25 +93,16 @@ func RegisterErrorType(space, local string, err XMPPError) {
 	ErrorTypes[name] = err
 }
 
-// A XEPRegistry is used by XEPs to register themselves with a client.
-type XEPRegistry interface {
-	// RegisterXEP registers a XEP and reports success. If any of the
-	// dependencies haven't been registered, false will be returned.
-	RegisterXEP(n int, x xep.Interface, required ...int) bool
+func RegisterXEP(n int, fn func(Client) error) {
+	if _, ok := XEPs[n]; ok {
+		panic(fmt.Sprintf("XEP %d has already been registered", n))
+	}
 
-	// TODO do we need a MustRegisterXEP?
-
-	// GetXEP tries to return a registered XEP.
-	GetXEP(n int) (xep.Interface, bool)
-
-	// MustGetXEP behaves like GetXEP but panics if the XEP hasn't
-	// been registered.
-	MustGetXEP(n int) xep.Interface
+	XEPs[n] = fn
 }
 
 type Client interface {
 	io.Writer
-	XEPRegistry
 	SendIQ(to, typ string, value interface{}) (chan *IQ, string)
 	SendIQReply(iq *IQ, typ string, value interface{})
 	SendPresence(p Presence) (cookie string, err error)
@@ -120,6 +111,17 @@ type Client interface {
 	JID() string
 	Features() Features
 	Close()
+
+	// RegisterXEP registers a XEP and reports success. If any of the
+	// dependencies haven't been registered, false will be returned.
+	RegisterXEP(n int, x xep.Interface, required ...int) error
+
+	// GetXEP tries to return a registered XEP.
+	GetXEP(n int) (xep.Interface, bool)
+
+	// MustGetXEP behaves like GetXEP but panics if the XEP hasn't
+	// been registered.
+	MustGetXEP(n int) xep.Interface
 }
 
 func Resolve(host string) ([]shared.Address, []error) {
@@ -170,7 +172,7 @@ func (s *subscribers) subscribe(ch chan<- Stanza) {
 
 type Connection struct {
 	net.Conn
-	XEPRegistry
+	extensions *extensions
 	mutex      sync.Mutex
 	user       string
 	host       string
@@ -191,31 +193,54 @@ type extensions struct {
 	m map[int]xep.Interface
 }
 
-func (e *extensions) RegisterXEP(n int, x xep.Interface, required ...int) bool {
+func (e *extensions) get(n int) (xep.Interface, bool) {
+	e.RLock()
+	defer e.RUnlock()
+	x, ok := e.m[n]
+	return x, ok
+}
+
+func (e *extensions) set(n int, x xep.Interface) {
 	e.Lock()
 	defer e.Unlock()
+	e.m[n] = x
+}
 
+type DependencyError struct {
+	XEP     int
+	Missing int
+}
+
+func (d DependencyError) Error() string {
+	return fmt.Sprintf("Could not register XEP-%d because the dependency XEP-%d could not be found",
+		d.XEP, d.Missing)
+}
+
+func (c *Connection) RegisterXEP(n int, x xep.Interface, required ...int) error {
 	for _, req := range required {
-		if _, ok := e.m[req]; !ok {
-			return false
+		if _, ok := c.extensions.get(req); !ok {
+			if wrapper, ok := XEPs[req]; ok {
+				wrapper(c)
+			}
+			return DependencyError{n, req}
 		}
 	}
 
-	e.m[n] = x
-	return true
+	c.extensions.set(n, x)
+	return nil
 }
 
-func (e *extensions) GetXEP(n int) (xep.Interface, bool) {
-	e.RLock()
-	defer e.RUnlock()
+func (c *Connection) GetXEP(n int) (xep.Interface, bool) {
+	c.extensions.RLock()
+	defer c.extensions.RUnlock()
 
-	x, ok := e.m[n]
+	x, ok := c.extensions.m[n]
 
 	return x, ok
 }
 
-func (e *extensions) MustGetXEP(n int) xep.Interface {
-	x, ok := e.GetXEP(n)
+func (c *Connection) MustGetXEP(n int) xep.Interface {
+	x, ok := c.GetXEP(n)
 	if !ok {
 		panic(fmt.Sprintf("XEP-%04d is not registered", n))
 	}
@@ -244,12 +269,12 @@ func newConnection(c net.Conn) *Connection {
 	cookieQuitChan := make(chan struct{})
 	go generateCookies(cookieChan, cookieQuitChan)
 	return &Connection{
-		Conn:        c,
-		decoder:     xml.NewDecoder(c),
-		cookie:      cookieChan,
-		cookieQuit:  cookieQuitChan,
-		callbacks:   make(map[string]chan *IQ),
-		XEPRegistry: &extensions{m: make(map[int]xep.Interface)},
+		Conn:       c,
+		decoder:    xml.NewDecoder(c),
+		cookie:     cookieChan,
+		cookieQuit: cookieQuitChan,
+		callbacks:  make(map[string]chan *IQ),
+		extensions: &extensions{m: make(map[int]xep.Interface)},
 	}
 
 }

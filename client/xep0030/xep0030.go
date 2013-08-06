@@ -15,8 +15,12 @@ type Connection struct {
 	features   []Feature
 }
 
+func init() {
+	rfc6120.RegisterXEP(30, Wrap)
+}
+
 // TODO reconsider the `Wrap` name
-func Wrap(c rfc6120.Client) *Connection {
+func Wrap(c rfc6120.Client) error {
 	conn := &Connection{
 		Client:  c,
 		stanzas: make(chan rfc6120.Stanza, 100),
@@ -27,8 +31,7 @@ func Wrap(c rfc6120.Client) *Connection {
 	c.SubscribeStanzas(conn.stanzas)
 	go conn.read()
 
-	c.RegisterXEP(30, conn)
-	return conn
+	return c.RegisterXEP(30, conn)
 }
 
 func (c *Connection) AddIdentity(id Identity) {

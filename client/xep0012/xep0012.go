@@ -24,13 +24,18 @@ type LastActivityRequest struct {
 	c *Connection
 }
 
-func Wrap(c rfc6120.Client) *Connection {
+func init() {
+	rfc6120.RegisterXEP(12, Wrap)
+}
+
+func Wrap(c rfc6120.Client) error {
 	conn := &Connection{
 		Client:  c,
 		stanzas: make(chan rfc6120.Stanza, 100),
 	}
-	if !c.RegisterXEP(12, conn, 30) {
-		panic("XEP-0012 depends on XEP-0030")
+
+	if err := c.RegisterXEP(12, conn, 30); err != nil {
+		return err
 	}
 
 	discovery := conn.MustGetXEP(30).(*xep0030.Connection)
@@ -39,7 +44,7 @@ func Wrap(c rfc6120.Client) *Connection {
 	c.SubscribeStanzas(conn.stanzas)
 	go conn.read()
 
-	return conn
+	return nil
 }
 
 func (c *Connection) read() {
