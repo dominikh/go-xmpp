@@ -38,7 +38,7 @@ const (
 type XEPWrapper func(Client) (pxep.Interface, error)
 
 var SupportedMechanisms = []string{"PLAIN"}
-var ErrTypes = make(map[xml.Name]XMPPError)
+var errTypes = make(map[xml.Name]XMPPError)
 var xeps = make(map[int]xep)
 
 func init() {
@@ -88,11 +88,11 @@ func RegisterErrorType(space, local string, err XMPPError) {
 	}
 
 	name := xml.Name{Space: space, Local: local}
-	if _, ok := ErrTypes[name]; ok {
+	if _, ok := errTypes[name]; ok {
 		panic(fmt.Sprintf("An error type for '%s %s' has already been registered", space, local))
 	}
 
-	ErrTypes[name] = err
+	errTypes[name] = err
 }
 
 type xep struct {
@@ -509,7 +509,7 @@ func (err Error) Errors() []XMPPError {
 		}
 
 		if start, ok := t.(xml.StartElement); ok {
-			errType, ok := ErrTypes[start.Name]
+			errType, ok := errTypes[start.Name]
 			if !ok {
 				// TODO stuff it into an "unrecognized error" struct or something
 				continue
