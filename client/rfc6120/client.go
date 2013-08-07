@@ -502,9 +502,13 @@ func (err Error) Errors() []XMPPError {
 	dec := xml.NewDecoder(r)
 
 	for {
-		// TODO handle error
 		t, err := dec.Token()
-		if err == io.EOF {
+		if err != nil {
+			// In normal operation, this should always be io.EOF – If
+			// there's a different reason for dec.Token() to return an
+			// error, unmarshalling into Error would've caught it
+			// already.
+
 			break
 		}
 
