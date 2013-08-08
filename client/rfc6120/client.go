@@ -9,7 +9,7 @@ package rfc6120
 
 import (
 	shared "honnef.co/go/xmpp/shared/rfc6120"
-	pxep "honnef.co/go/xmpp/shared/xep"
+	"honnef.co/go/xmpp/shared/xep"
 
 	"bytes"
 	"crypto/tls"
@@ -35,11 +35,11 @@ const (
 	nsClient  = "jabber:client"
 )
 
-type XEPWrapper func(Client) (pxep.Interface, error)
+type XEPWrapper func(Client) (xep.Interface, error)
 
 var SupportedMechanisms = []string{"PLAIN"}
 var errTypes = make(map[xml.Name]XMPPError)
-var xeps = make(map[int]xep)
+var xepWrappers = make(map[int]xepWrapper)
 
 func init() {
 	// We're using RegisterErrorType instead of directly populating
@@ -95,17 +95,17 @@ func RegisterErrorType(space, local string, err XMPPError) {
 	errTypes[name] = err
 }
 
-type xep struct {
+type xepWrapper struct {
 	fn       XEPWrapper
 	required []int
 }
 
 func RegisterXEP(n int, fn XEPWrapper, required ...int) {
-	if _, ok := xeps[n]; ok {
+	if _, ok := xepWrappers[n]; ok {
 		panic(fmt.Sprintf("XEP %d has already been registered", n))
 	}
 
-	xeps[n] = xep{fn, required}
+	xepWrappers[n] = xepWrapper{fn, required}
 }
 
 type Client interface {
@@ -122,14 +122,14 @@ type Client interface {
 	// RegisterXEP registers a XEP and all its dependencies, if
 	// required. It returns a XEP-wrapped connection and an error, if
 	// any.
-	RegisterXEP(n int) (pxep.Interface, error)
+	RegisterXEP(n int) (xep.Interface, error)
 
 	// GetXEP tries to return a registered XEP.
-	GetXEP(n int) (pxep.Interface, bool)
+	GetXEP(n int) (xep.Interface, bool)
 
 	// MustGetXEP behaves like GetXEP but panics if the XEP hasn't
 	// been registered.
-	MustGetXEP(n int) pxep.Interface
+	MustGetXEP(n int) xep.Interface
 }
 
 func Resolve(host string) ([]shared.Address, []error) {
@@ -211,17 +211,17 @@ type Conn struct {
 
 type extensions struct {
 	sync.RWMutex
-	m map[int]pxep.Interface
+	m map[int]xep.Interface
 }
 
-func (e *extensions) get(n int) (pxep.Interface, bool) {
+func (e *extensions) get(n int) (xep.Interface, bool) {
 	e.RLock()
 	defer e.RUnlock()
 	x, ok := e.m[n]
 	return x, ok
 }
 
-func (e *extensions) set(n int, x pxep.Interface) {
+func (e *extensions) set(n int, x xep.Interface) {
 	e.Lock()
 	defer e.Unlock()
 	e.m[n] = x
@@ -237,13 +237,13 @@ func (d DependencyError) Error() string {
 		d.XEP, d.Missing)
 }
 
-func (c *Conn) RegisterXEP(n int) (pxep.Interface, error) {
+func (c *Conn) RegisterXEP(n int) (xep.Interface, error) {
 	// Do not register the same XEP twice
 	if conn, ok := c.extensions.get(n); ok {
 		return conn, nil
 	}
 
-	xep, ok := xeps[n]
+	xep, ok := xepWrappers[n]
 	if !ok {
 		return nil, DependencyError{n, n}
 	}
@@ -268,7 +268,7 @@ func (c *Conn) RegisterXEP(n int) (pxep.Interface, error) {
 	return conn, nil
 }
 
-func (c *Conn) MustRegisterXEP(n int) pxep.Interface {
+func (c *Conn) MustRegisterXEP(n int) xep.Interface {
 	ret, err := c.RegisterXEP(n)
 	if err != nil {
 		panic(err.Error())
@@ -277,7 +277,7 @@ func (c *Conn) MustRegisterXEP(n int) pxep.Interface {
 	return ret
 }
 
-func (c *Conn) GetXEP(n int) (pxep.Interface, bool) {
+func (c *Conn) GetXEP(n int) (xep.Interface, bool) {
 	c.extensions.RLock()
 	defer c.extensions.RUnlock()
 
@@ -286,7 +286,7 @@ func (c *Conn) GetXEP(n int) (pxep.Interface, bool) {
 	return x, ok
 }
 
-func (c *Conn) MustGetXEP(n int) pxep.Interface {
+func (c *Conn) MustGetXEP(n int) xep.Interface {
 	x, ok := c.GetXEP(n)
 	if !ok {
 		panic(fmt.Sprintf("XEP-%04d is not registered", n))
@@ -326,7 +326,7 @@ func NewConn() *Conn {
 		cookie:     cookieChan,
 		cookieQuit: cookieQuitChan,
 		callbacks:  make(map[string]chan *IQ),
-		extensions: &extensions{m: make(map[int]pxep.Interface)},
+		extensions: &extensions{m: make(map[int]xep.Interface)},
 		Emitter:    &DroppingEmitter{},
 	}
 
