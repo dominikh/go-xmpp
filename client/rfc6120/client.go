@@ -778,27 +778,6 @@ func (c *Conn) Close() {
 	// before terminating the underlying TCP connection"
 }
 
-var xmlSpecial = map[byte]string{
-	'<':  "&lt;",
-	'>':  "&gt;",
-	'"':  "&quot;",
-	'\'': "&apos;",
-	'&':  "&amp;",
-}
-
-func xmlEscape(s string) string {
-	var b bytes.Buffer
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if s, ok := xmlSpecial[c]; ok {
-			b.WriteString(s)
-		} else {
-			b.WriteByte(c)
-		}
-	}
-	return b.String()
-}
-
 func (c *Conn) SendIQ(to, typ string, value interface{}) (chan *IQ, string) {
 	cookie := c.getCookie()
 	reply := make(chan *IQ, 1)
