@@ -180,7 +180,7 @@ func (c *Conn) BecomeAvailable() {
 func (c *Conn) BecomeUnavailable() {
 	// TODO document SendPresence (rfc6120) for more specific needs
 	// TODO can't be have one global xml encoder?
-	xml.NewEncoder(c).Encode(rfc6120.Presence{Header: rfc6120.Header{Type: "unavailable"}})
+	c.Encode(rfc6120.Presence{Header: rfc6120.Header{Type: "unavailable"}})
 }
 
 func (c *Conn) SendMessage(typ, to, message string) {
@@ -200,7 +200,7 @@ func (c *Conn) SendMessage(typ, to, message string) {
 		Body: message,
 	}
 
-	xml.NewEncoder(c).Encode(m)
+	c.Encode(m)
 }
 
 func (c *Conn) Reply(orig *rfc6120.Message, reply string) {

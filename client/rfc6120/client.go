@@ -110,6 +110,7 @@ func RegisterXEP(n int, fn XEPWrapper, required ...int) {
 
 type Client interface {
 	io.Writer
+	Encode(interface{}) error
 	SendIQ(to, typ string, value interface{}) (chan *IQ, string)
 	SendIQReply(iq *IQ, typ string, value interface{})
 	SendPresence(p Presence) (cookie string, err error)
@@ -199,6 +200,7 @@ type Conn struct {
 	user       string
 	host       string
 	decoder    *xml.Decoder
+	encoder    *xml.Encoder
 	features   Features
 	password   string
 	cookie     <-chan string
@@ -387,8 +389,13 @@ func Dial(user, host, password string) (client Client, errors []error, ok bool) 
 	return c, errs, ok
 }
 
-func (c *Conn) setUp() []error {
+func (c *Conn) initializeXMLCoders() {
 	c.decoder = xml.NewDecoder(c)
+	c.encoder = xml.NewEncoder(c)
+}
+
+func (c *Conn) setUp() []error {
+	c.initializeXMLCoders()
 	// TODO error handling
 	for {
 		c.openStream()
@@ -552,6 +559,10 @@ func (streamError) IsError() bool {
 
 func (c *Conn) JID() string {
 	return c.jid
+}
+
+func (c *Conn) Encode(v interface{}) error {
+	return c.encoder.Encode(v)
 }
 
 func (c *Conn) read() {
@@ -796,7 +807,7 @@ func (c *Conn) SendIQ(to, typ string, value interface{}) (chan *IQ, string) {
 	}
 
 	// TODO handle error
-	xml.NewEncoder(c).Encode(iq)
+	c.Encode(iq)
 	return reply, cookie
 }
 
@@ -812,16 +823,16 @@ func (c *Conn) SendIQReply(iq *IQ, typ string, value interface{}) {
 	}
 
 	// TODO handle error
-	xml.NewEncoder(c).Encode(reply)
+	c.Encode(reply)
 }
 
 func (c *Conn) SendPresence(p Presence) (cookie string, err error) {
 	// TODO do we need to store the cookie somewhere? present the user with a channel?
 	// TODO document that we set the ID
 	p.Id = c.getCookie()
-	xml.NewEncoder(c).Encode(p)
+	c.Encode(p)
 	return p.Id, nil
-	// TODO handle error (both of NewEncoder and what the server will tell us)
+	// TODO handle error (server reply)
 }
 
 // TODO reconsider name, since it conflicts with the idea of sending
