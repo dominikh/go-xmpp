@@ -465,6 +465,14 @@ func (p Presence) IsError() bool {
 	return p.Error != nil
 }
 
+type sendIQ struct { // info/query
+	XMLName xml.Name `xml:"jabber:client iq"`
+	Header
+
+	Error *Error `xml:"error"`
+	Inner interface{}
+}
+
 type IQ struct { // info/query
 	XMLName xml.Name `xml:"jabber:client iq"`
 	Header
@@ -791,43 +799,41 @@ func xmlEscape(s string) string {
 	return b.String()
 }
 
-// TODO error handling
 func (c *Conn) SendIQ(to, typ string, value interface{}) (chan *IQ, string) {
-	buf := &bytes.Buffer{}
-
 	cookie := c.getCookie()
 	reply := make(chan *IQ, 1)
 	c.mu.Lock()
 	c.callbacks[cookie] = reply
 	c.mu.Unlock()
 
-	toAttr := ""
-	if len(to) > 0 {
-		toAttr = "to='" + xmlEscape(to) + "'"
+	iq := sendIQ{
+		Header: Header{
+			From: c.jid,
+			Id:   cookie,
+			To:   to,
+			Type: typ,
+		},
+		Inner: value,
 	}
 
-	fmt.Fprintf(buf, "<iq %s from='%s' type='%s' id='%s'>", toAttr, xmlEscape(c.jid), xmlEscape(typ), cookie)
-	xml.NewEncoder(buf).Encode(value)
-	fmt.Fprintf(buf, "</iq>")
-
-	io.Copy(c, buf)
-
+	// TODO handle error
+	xml.NewEncoder(c).Encode(iq)
 	return reply, cookie
 }
 
-// TODO get rid of to and id arguments, use IQ value instead
 func (c *Conn) SendIQReply(iq *IQ, typ string, value interface{}) {
-	toAttr := ""
-	if len(iq.From) > 0 {
-		toAttr = "to='" + xmlEscape(iq.From) + "'"
+	reply := sendIQ{
+		Header: Header{
+			From: c.jid,
+			Id:   iq.Id,
+			To:   iq.From,
+			Type: typ,
+		},
+		Inner: value,
 	}
 
-	fmt.Fprintf(c, "<iq %s from='%s' type='%s' id='%s'>", toAttr, xmlEscape(c.jid), xmlEscape(typ), iq.Id)
-	if value != nil {
-		xml.NewEncoder(c).Encode(value)
-	}
-	fmt.Fprintf(c, "</iq>")
-
+	// TODO handle error
+	xml.NewEncoder(c).Encode(reply)
 }
 
 func (c *Conn) SendPresence(p Presence) (cookie string, err error) {
