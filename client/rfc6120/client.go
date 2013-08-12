@@ -298,6 +298,10 @@ func (c *Conn) EmitStanza(stanza Stanza) {
 	c.Emitter.Emit(stanza)
 }
 
+func (c *Conn) SubscribeStanzas(ch chan<- Stanza) {
+	c.Emitter.Subscribe(ch)
+}
+
 func generateCookies(ch chan<- string, quit <-chan struct{}) {
 	id := uint64(0)
 	for {
@@ -876,8 +880,4 @@ func (c *Conn) SendError(inReplyTo Stanza, typ string, text string, errors ...XM
 	}
 	fmt.Fprintf(buf, "</error></%s>", tag)
 	io.Copy(c, buf)
-}
-
-func (c *Conn) SubscribeStanzas(ch chan<- Stanza) {
-	c.Emitter.Subscribe(ch)
 }
