@@ -172,18 +172,15 @@ func (s *DroppingEmitter) Emit(stanza Stanza) (delivered bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	toSkip := len(s.chans)
 	for _, ch := range s.chans {
 		select {
 		case ch <- stanza:
+			delivered = true
 		default:
-			toSkip--
 		}
 	}
 
-	// if toSkip == 0, none of the subscribers were able to receive the stanza, so
-	// we definitely couldn't process it
-	return toSkip != 0
+	return
 }
 
 // Subscribe adds a subscriber.
