@@ -673,6 +673,10 @@ func (c *Conn) bind() {
 		XMLName xml.Name `xml:"urn:ietf:params:xml:ns:xmpp-bind bind"`
 	}{})
 	response := <-ch
+	if response == nil {
+		return
+	}
+
 	var bind struct {
 		XMLName  xml.Name `xml:"urn:ietf:params:xml:ns:xmpp-bind bind"`
 		Resource string   `xml:"resource"`
@@ -769,12 +773,46 @@ func (e UnexpectedMessage) Error() string {
 	return e.Name
 }
 
-// TODO return error of Fprintf
 func (c *Conn) openStream() error {
 	// TODO consider not including the JID if the connection isn't encrypted yet
 	// TODO configurable xml:lang
-	_, err := fmt.Fprintf(c, "<?xml version='1.0' encoding='UTF-8'?><stream:stream from='%s@%s' to='%s' version='1.0' xml:lang='en' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>",
-		c.user, c.host, c.host)
+
+	_, err := fmt.Fprint(c, xml.Header)
+	if err != nil {
+		return err
+	}
+
+	err = c.encoder.EncodeToken(xml.StartElement{
+		// Note that unlike many other implementations, we do not set
+		// xmlns to jabber:client. Instead, all tags in the
+		// jabber:client namespace are annoated explicitly.
+		Name: xml.Name{
+			Local: "stream",
+			Space: nsStream,
+		},
+		Attr: []xml.Attr{
+			xml.Attr{
+				Name:  xml.Name{Local: "from"},
+				Value: c.user + "@" + c.host,
+			},
+			xml.Attr{
+				Name:  xml.Name{Local: "to"},
+				Value: c.host,
+			},
+			xml.Attr{
+				Name:  xml.Name{Local: "version"},
+				Value: "1.0",
+			},
+			xml.Attr{
+				Name: xml.Name{
+					Local: "lang",
+					Space: "http://www.w3.org/XML/1998/namespace",
+				},
+				Value: "en",
+			},
+		},
+	})
+
 	return err
 }
 
