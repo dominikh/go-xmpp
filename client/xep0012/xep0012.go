@@ -1,6 +1,6 @@
 // Package xep0012 implements XEP-0012 (Last Activity).
 //
-// It allows to query an entities idle time/last online time/uptime.
+// It allows to query an entity's idle time/last online time/uptime.
 // It also enables answering such requests made to the client.
 //
 // Using this package necessitates reacting to the synthetic

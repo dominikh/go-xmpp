@@ -20,7 +20,6 @@ func init() {
 	rfc6120.RegisterXEP(30, wrap)
 }
 
-// TODO reconsider the `Wrap` name
 func wrap(c rfc6120.Client) (xep.Interface, error) {
 	conn := &Connection{
 		Client:  c,
