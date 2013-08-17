@@ -114,6 +114,7 @@ type Client interface {
 	SendIQ(to, typ string, value interface{}) (chan *IQ, string)
 	SendIQReply(iq *IQ, typ string, value interface{})
 	SendPresence(p Presence) (cookie string, err error)
+	SendError(inReplyTo Stanza, typ string, text string, errors ...XMPPError)
 	EmitStanza(s Stanza)
 	SubscribeStanzas(ch chan<- Stanza)
 	JID() string
@@ -454,9 +455,16 @@ func (c *Conn) setUp() error {
 	return nil
 }
 
+// FIXME is the way this interface looks really a good idea? Maybe it
+// can be solved differently. Maybe have a single ErrorReply(*Error)
+// function. It would cause for some duplicated code, but have way
+// less methods and reflection going on.
 type Stanza interface {
 	ID() string
 	IsError() bool
+	ErrorReply(*Error) Stanza // FIXME reconsider this idea as well,
+	// since it needs to be exported and
+	// that might confuse users
 }
 
 type Header struct {
@@ -479,10 +487,23 @@ type Message struct {
 	Header
 
 	Subject string `xml:"subject,omitempty"`
-	Body    string `xml:"body"` // TODO omitempty?
+	Body    string `xml:"body,omitempty"` // TODO omitempty?
 	Error   *Error `xml:"error,omitempty"`
 	Thread  string `xml:"thread,omitempty"`
 	Inner   []byte `xml:",innerxml"`
+}
+
+func (m Message) ErrorReply(error *Error) Stanza {
+	m.Error = error
+
+	m.To, m.From = m.From, m.To
+	m.Type = "error"
+	m.Subject = ""
+	m.Body = ""
+	m.Thread = ""
+	m.Inner = nil
+
+	return m
 }
 
 type Text struct {
@@ -501,6 +522,19 @@ type Presence struct {
 	Priority int    `xml:"priority,omitempty"`
 	Error    *Error `xml:"error,omitempty"`
 	Inner    []byte `xml:",innerxml"`
+}
+
+func (p Presence) ErrorReply(error *Error) Stanza {
+	p.Error = error
+
+	p.To, p.From = p.From, p.To
+	p.Type = "error"
+	p.Show = ""
+	p.Status = ""
+	p.Priority = 0
+	p.Inner = nil
+
+	return p
 }
 
 func (p Presence) IsError() bool {
@@ -522,6 +556,17 @@ type IQ struct { // info/query
 	Error *Error   `xml:"error"`
 	Query xml.Name `xml:"query"`
 	Inner []byte   `xml:",innerxml"`
+}
+
+func (i IQ) ErrorReply(error *Error) Stanza {
+	i.Error = error
+
+	i.To, i.From = i.From, i.To
+	i.Type = "error"
+	i.Query = xml.Name{}
+	i.Inner = nil
+
+	return i
 }
 
 func (iq IQ) IsError() bool {
@@ -548,6 +593,11 @@ func (x *XMPPErrors) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 	return nil
 }
 
+// func (x XMPPErrors) MarshalXML(e *xml.Encoder, start xml.StartElement) (error) {
+
+//	return nil
+// }
+
 type Error struct {
 	XMLName xml.Name   `xml:"jabber:client error"`
 	Type    string     `xml:"type,attr"`
@@ -565,6 +615,8 @@ func (err Error) Error() string {
 	return b.String()
 }
 
+// FIXME seriously reconsider the choice of making streamError a
+// stanza. It's unlike any other.
 type streamError struct {
 	XMLName xml.Name `xml:"http://etherx.jabber.org/streams error"`
 	Any     xml.Name `xml:",any"`
@@ -578,6 +630,8 @@ func (streamError) ID() string {
 func (streamError) IsError() bool {
 	return true
 }
+
+func (streamError) ErrorReply(*Error) Stanza { return nil }
 
 func (c *Conn) JID() string {
 	return c.jid
@@ -940,39 +994,12 @@ func (c *Conn) SendError(inReplyTo Stanza, typ string, text string, errors ...XM
 		// helps to prevent looping.
 		return
 	}
-	var tag, id, from, to string
-	id = inReplyTo.ID()
 
-	switch t := inReplyTo.(type) {
-	case *Message:
-		tag = "message"
-		from = t.From
-		to = t.To
-	case *Presence:
-		tag = "presence"
-		from = t.From
-		to = t.To
-	case *IQ:
-		tag = "iq"
-		from = t.From
-		to = t.To
-	default:
-		// TODO what to do here?
-		return
+	error := &Error{
+		Type:   typ,
+		Errors: XMPPErrors(errors),
 	}
 
-	buf := &bytes.Buffer{}
-
-	if id != "" {
-		fmt.Fprintf(buf, "<%s from='%s' to='%s' id='%s' type='error'>", tag, to, from, id) // We swap to and from
-	} else {
-		fmt.Fprintf(buf, "<%s from='%s' to='%s' type='error'>", tag, to, from) // We swap to and from
-	}
-	fmt.Fprintf(buf, "<error type='%s'>", typ)
-	enc := xml.NewEncoder(buf)
-	for _, error := range errors {
-		enc.Encode(error) // TODO handle error
-	}
-	fmt.Fprintf(buf, "</error></%s>", tag)
-	io.Copy(c, buf)
+	response := inReplyTo.ErrorReply(error)
+	c.encoder.Encode(response)
 }

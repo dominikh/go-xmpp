@@ -43,6 +43,10 @@ func Wrap(c rfc6120.Client) *Conn {
 
 type AuthorizationRequest rfc6120.Presence
 
+func (a AuthorizationRequest) ErrorReply(error *rfc6120.Error) rfc6120.Stanza {
+	return rfc6120.Presence(a).ErrorReply(error)
+}
+
 func (c *Conn) read() {
 	for stanza := range c.stanzas {
 		// TODO way to subscribe to roster events (roster push, subscription requests, ...)
