@@ -78,14 +78,20 @@ func (fs Features) RequiresTLS() bool {
 	return false
 }
 
-func (c *Conn) parseFeatures() {
+func (c *Conn) parseFeatures() error {
 	features := make(Features)
 
-	c.nextStartElement() // FIXME flow. this skips over the stream
-	// t, _ := c.NextStartElement() // FIXME error handling
+	_, err := c.nextStartElement() // FIXME flow. this skips over the stream
+	if err != nil {
+		return err
+	}
+
 	for {
 		// TODO handle not getting to the end of the features (connection timeout?)
-		t, _ := c.nextToken() // FIXME error handling
+		t, err := c.nextToken()
+		if err != nil {
+			return err
+		}
 		if t, ok := t.(xml.StartElement); ok {
 			// FIXME namespace
 			switch t.Name.Local {
@@ -93,8 +99,10 @@ func (c *Conn) parseFeatures() {
 				var f struct {
 					Required xml.Name `xml:"required"`
 				}
-				c.decoder.DecodeElement(&f, &t) // TODO handle error
-				// c.decoder.Skip()
+				err = c.decoder.DecodeElement(&f, &t)
+				if err != nil {
+					return err
+				}
 				features["starttls"] = StartTLS{f.Required.Local != ""}
 			case "bind":
 				features["bind"] = Bind{}
@@ -105,7 +113,10 @@ func (c *Conn) parseFeatures() {
 						Name string `xml:",chardata"`
 					} `xml:"mechanism"`
 				}
-				c.decoder.DecodeElement(&f, &t) // TODO handle error
+				err = c.decoder.DecodeElement(&f, &t)
+				if err != nil {
+					return err
+				}
 				mechanisms := make(SASL, len(f.Mechanisms))
 				for i, m := range f.Mechanisms {
 					mechanisms[i] = m.Name
@@ -122,6 +133,7 @@ func (c *Conn) parseFeatures() {
 	}
 
 	c.features = features
+	return nil
 }
 
 func (c *Conn) Features() Features {

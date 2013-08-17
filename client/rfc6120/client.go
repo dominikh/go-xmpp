@@ -368,10 +368,15 @@ func (c *Conn) Dial() (errors []error, ok bool) {
 		}
 	}
 
-	moreErrors := c.setUp()
-	errors = append(errors, moreErrors...)
+	err := c.setUp()
+	if err != nil {
+		errors = append(errors, err)
+		// FIXME consider sending a </stream> to cleanly terminate the
+		// connection
+		c.Conn.Close()
+	}
 
-	return errors, len(moreErrors) == 0
+	return errors, err == nil
 }
 
 // Dial connects to an XMPP server and authenticates with the provided
@@ -395,27 +400,56 @@ func (c *Conn) initializeXMLCoders() {
 	c.encoder = xml.NewEncoder(c)
 }
 
-func (c *Conn) setUp() []error {
+// TODO document that/where we return a ConnectionError
+type ConnectionError struct {
+	UnderlyingError error
+	label           string
+}
+
+func (e ConnectionError) Error() string {
+	return fmt.Sprintf("%s: %s", e.label, e.UnderlyingError.Error())
+}
+
+func (c *Conn) setUp() error {
+	var err error
+
 	c.initializeXMLCoders()
-	// TODO error handling
 	for {
-		c.openStream()
-		c.receiveStream()
-		c.parseFeatures()
+		err = c.openStream()
+		if err != nil {
+			return ConnectionError{err, "Error while opening stream"}
+		}
+
+		err = c.receiveStream()
+		if err != nil {
+			return ConnectionError{err, "Error receiving stream"}
+		}
+
+		err = c.parseFeatures()
+		if err != nil {
+			return ConnectionError{err, "Error parsing stream features"}
+		}
+
 		if c.features.Includes("starttls") {
-			c.startTLS() // TODO handle error
+			err = c.startTLS()
+			if err != nil {
+				return ConnectionError{err, "Error establishing TLS connection"}
+			}
 			continue
 		}
 
 		if c.features.Requires("sasl") {
-			c.sasl()
+			err = c.sasl()
+			if err != nil {
+				return ConnectionError{err, "Error during SASL"}
+			}
 			continue
 		}
 		break
 	}
 
 	go c.read()
-	c.bind()
+	c.bind() // TODO handle error
 
 	return nil
 }
@@ -494,54 +528,41 @@ func (iq IQ) IsError() bool {
 	return iq.Error != nil
 }
 
+type XMPPErrors []XMPPError
+
+func (x *XMPPErrors) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	errType, ok := errTypes[start.Name]
+	if !ok {
+		return d.Skip()
+		// TODO stuff it into an "unrecognized error" struct or something
+	}
+	// Create a pointer to the error value (not the interface)
+	errValue := reflect.New(reflect.TypeOf(errType)).Interface()
+
+	err := d.DecodeElement(errValue, &start)
+	if err != nil {
+		return err
+	}
+	*x = append(*x, errValue.(XMPPError))
+
+	return nil
+}
+
 type Error struct {
-	XMLName  xml.Name `xml:"jabber:client error"`
-	Type     string   `xml:"type,attr"`
-	Text     string   `xml:"text"` // TODO do we need to specify the namespace here?
-	InnerXML []byte   `xml:",innerxml"`
+	XMLName xml.Name   `xml:"jabber:client error"`
+	Type    string     `xml:"type,attr"`
+	Text    string     `xml:"text"` // TODO do we need to specify the namespace here?
+	Errors  XMPPErrors `xml:",any"`
 }
 
 func (err Error) Error() string {
 	var b bytes.Buffer
 	b.WriteString(fmt.Sprintf("(%s) ", err.Type))
-	for _, e := range err.Errors() {
+	for _, e := range err.Errors {
 		b.WriteString(fmt.Sprintf("<%s/>", e.Name().Local))
 	}
 
 	return b.String()
-}
-
-func (err Error) Errors() []XMPPError {
-	var errors []XMPPError
-
-	r := bytes.NewReader(err.InnerXML)
-	dec := xml.NewDecoder(r)
-
-	for {
-		t, err := dec.Token()
-		if err != nil {
-			// In normal operation, this should always be io.EOF – If
-			// there's a different reason for dec.Token() to return an
-			// error, unmarshalling into Error would've caught it
-			// already.
-
-			break
-		}
-
-		if start, ok := t.(xml.StartElement); ok {
-			errType, ok := errTypes[start.Name]
-			if !ok {
-				// TODO stuff it into an "unrecognized error" struct or something
-				continue
-			}
-			errValue := reflect.New(reflect.TypeOf(errType)).Interface()
-			// TODO handle error
-			dec.DecodeElement(errValue, &start)
-			errors = append(errors, errValue.(XMPPError))
-		}
-	}
-
-	return errors
 }
 
 type streamError struct {
@@ -566,18 +587,36 @@ func (c *Conn) Encode(v interface{}) error {
 	return c.encoder.Encode(v)
 }
 
-func (c *Conn) read() {
-	for {
-		t, _ := c.nextStartElement()
+type notWellFormed struct {
+	XMLName xml.Name `xml:"urn:ietf:params:xml:ns:xmpp-streams not-well-formed"`
+}
 
-		if t == nil {
-			c.mu.Lock()
-			for _, ch := range c.callbacks {
-				close(ch)
+type invalidNamespace struct {
+	XMLName xml.Name `xml:"urn:ietf:params:xml:ns:xmpp-streams invalid-namespace"`
+}
+
+func (c *Conn) sendStreamError(e interface{}) {
+	c.encoder.EncodeElement(e, xml.StartElement{
+		Name: xml.Name{
+			Local: "error",
+			Space: nsStream,
+		},
+	})
+}
+
+func (c *Conn) read() {
+	// TODO find a way to report error
+	for {
+		t, err := c.nextStartElement()
+
+		if err != nil {
+			if err != io.EOF {
+				c.sendStreamError(notWellFormed{})
 			}
-			c.mu.Unlock()
+
 			c.Close()
 			return
+
 		}
 
 		var nv Stanza
@@ -614,6 +653,11 @@ func (c *Conn) read() {
 				c.SendError(nv, "wait", "", ErrResourceConstraint{})
 			}
 		}
+
+		if _, ok := nv.(*streamError); ok {
+			c.Close()
+			return
+		}
 	}
 }
 
@@ -644,17 +688,24 @@ func (c *Conn) reset() {
 	c.features = nil
 }
 
-func (c *Conn) sasl() {
+func (c *Conn) sasl() error {
 	payload := fmt.Sprintf("\x00%s\x00%s", c.user, c.password)
 	payloadb64 := base64.StdEncoding.EncodeToString([]byte(payload))
-	fmt.Fprintf(c, "<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>%s</auth>", payloadb64)
-	t, _ := c.nextStartElement() // FIXME error handling
+	_, err := fmt.Fprintf(c, "<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>%s</auth>", payloadb64)
+	if err != nil {
+		return err
+	}
+	t, err := c.nextStartElement()
+	if err != nil {
+		return err
+	}
 	if t.Name.Local == "success" {
 		c.reset()
 	} else {
 		// TODO handle the error case
 	}
 
+	return nil
 	// TODO actually determine which mechanism we can use, use interfaces etc to call it
 }
 
@@ -700,7 +751,7 @@ func (c *Conn) nextStartElement() (*xml.StartElement, error) {
 			return &t, nil
 		case xml.EndElement:
 			if t.Name.Local == "stream" && t.Name.Space == nsStream {
-				return nil, nil
+				return nil, io.EOF
 			}
 		}
 	}
@@ -719,11 +770,12 @@ func (e UnexpectedMessage) Error() string {
 }
 
 // TODO return error of Fprintf
-func (c *Conn) openStream() {
+func (c *Conn) openStream() error {
 	// TODO consider not including the JID if the connection isn't encrypted yet
 	// TODO configurable xml:lang
-	fmt.Fprintf(c, "<?xml version='1.0' encoding='UTF-8'?><stream:stream from='%s@%s' to='%s' version='1.0' xml:lang='en' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>",
+	_, err := fmt.Fprintf(c, "<?xml version='1.0' encoding='UTF-8'?><stream:stream from='%s@%s' to='%s' version='1.0' xml:lang='en' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>",
 		c.user, c.host, c.host)
+	return err
 }
 
 type UnsupportedVersion struct {
@@ -745,8 +797,7 @@ func (c *Conn) receiveStream() error {
 	}
 
 	if t.Name.Space != "http://etherx.jabber.org/streams" {
-		// TODO consider a function for sending errors
-		fmt.Fprint(c, "<stream:error><invalid-namespace xmlns='urn:ietf:params:xml:ns:xmpp-streams'/>")
+		c.sendStreamError(invalidNamespace{})
 		c.Close()
 		// FIXME return error
 		return nil // FIXME do we need to skip over any tokens here?
@@ -779,6 +830,12 @@ func (c *Conn) Close() {
 		c.Conn.Close()
 		return
 	}
+
+	c.mu.Lock()
+	for _, ch := range c.callbacks {
+		close(ch)
+	}
+	c.mu.Unlock()
 
 	fmt.Fprint(c, "</stream:stream>")
 	c.closing = true
