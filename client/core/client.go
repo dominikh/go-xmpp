@@ -173,6 +173,9 @@ func (s *DroppingEmitter) Emit(stanza Stanza) (delivered bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// TODO should we return true when there are no channels at all?
+	// if so, documented that in the interface
+
 	for _, ch := range s.chans {
 		select {
 		case ch <- stanza:
@@ -313,6 +316,10 @@ func generateCookies(ch chan<- string, quit <-chan struct{}) {
 			return
 		}
 	}
+}
+
+func (c *Conn) getCookie() string {
+	return <-c.cookie
 }
 
 // NewConn creates a new connection. After setting user name,
@@ -553,11 +560,6 @@ func (x *XMPPErrors) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 	return nil
 }
 
-// func (x XMPPErrors) MarshalXML(e *xml.Encoder, start xml.StartElement) (error) {
-
-//	return nil
-// }
-
 type Error struct {
 	XMLName xml.Name   `xml:"jabber:client error"`
 	Type    string     `xml:"type,attr"`
@@ -661,6 +663,7 @@ func (c *Conn) read() {
 			c.mu.Unlock()
 		} else {
 			delivered := c.Emitter.Emit(nv)
+			// FIXME should we really send an error to the sender?
 			if !delivered {
 				c.SendError(nv, "wait", "", ErrResourceConstraint{})
 			}
@@ -671,10 +674,6 @@ func (c *Conn) read() {
 			return
 		}
 	}
-}
-
-func (c *Conn) getCookie() string {
-	return <-c.cookie
 }
 
 func (c *Conn) bind() {
@@ -959,7 +958,7 @@ func (c *Conn) SendError(inReplyTo Stanza, typ string, text string, errors ...XM
 	}
 
 	response := errorReply(inReplyTo, error)
-	c.encoder.Encode(response)
+	c.encoder.Encode(response) // FIXME handle error
 }
 
 // TODO consider adding an ErrorReply interface that is optional to

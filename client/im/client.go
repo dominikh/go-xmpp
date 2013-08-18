@@ -57,7 +57,6 @@ func (c *Conn) read() {
 		case *core.Presence:
 			if t.Type == "subscribe" {
 				c.EmitStanza((*AuthorizationRequest)(t))
-				// c.subscribers.send((*AuthorizationRequest)(t))
 			}
 		default:
 			// TODO track JID etc
@@ -179,7 +178,6 @@ func (c *Conn) BecomeAvailable() {
 
 func (c *Conn) BecomeUnavailable() {
 	// TODO document SendPresence (rfc6120) for more specific needs
-	// TODO can't be have one global xml encoder?
 	c.Encode(core.Presence{Header: core.Header{Type: "unavailable"}})
 }
 
