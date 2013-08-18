@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-type Connection struct {
+type Conn struct {
 	core.Client
 	sync.RWMutex
 	stanzas    chan core.Stanza
@@ -21,7 +21,7 @@ func init() {
 }
 
 func wrap(c core.Client) (xep.Interface, error) {
-	conn := &Connection{
+	conn := &Conn{
 		Client:  c,
 		stanzas: make(chan core.Stanza, 100),
 	}
@@ -34,19 +34,19 @@ func wrap(c core.Client) (xep.Interface, error) {
 	return conn, nil
 }
 
-func (c *Connection) AddIdentity(id Identity) {
+func (c *Conn) AddIdentity(id Identity) {
 	c.Lock()
 	c.identities = append(c.identities, id)
 	c.Unlock()
 }
 
-func (c *Connection) AddFeature(f string) {
+func (c *Conn) AddFeature(f string) {
 	c.Lock()
 	c.features = append(c.features, Feature{f})
 	c.Unlock()
 }
 
-func (c *Connection) read() {
+func (c *Conn) read() {
 	// TODO support queries for items/item nodes
 	for stanza := range c.stanzas {
 		if iq, ok := stanza.(*core.IQ); ok {
@@ -93,12 +93,12 @@ type Item struct {
 }
 
 // FIXME return error
-func (c *Connection) GetInfo(to string) (Info, error) {
+func (c *Conn) GetInfo(to string) (Info, error) {
 	return GetInfo(c, to)
 }
 
 // FIXME return error
-func (c *Connection) GetInfoFromNode(to, node string) (Info, error) {
+func (c *Conn) GetInfoFromNode(to, node string) (Info, error) {
 	return GetInfoFromNode(c, to, node)
 }
 
@@ -135,11 +135,11 @@ func GetInfoFromNode(c core.Client, to, node string) (Info, error) {
 	return parseInfo(<-ch)
 }
 
-func (c *Connection) GetItems(to string) ([]Item, error) {
+func (c *Conn) GetItems(to string) ([]Item, error) {
 	return GetItems(c, to)
 }
 
-func (c *Connection) GetItemsFromNode(to, node string) ([]Item, error) {
+func (c *Conn) GetItemsFromNode(to, node string) ([]Item, error) {
 	return GetItemsFromNode(c, to, node)
 }
 

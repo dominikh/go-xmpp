@@ -15,14 +15,14 @@ import (
 	"honnef.co/go/xmpp/shared/xep"
 )
 
-type Connection struct {
+type Conn struct {
 	core.Client
 	stanzas chan core.Stanza
 }
 
 type LastActivityRequest struct {
 	*core.IQ
-	c *Connection
+	c *Conn
 }
 
 func init() {
@@ -30,12 +30,12 @@ func init() {
 }
 
 func wrap(c core.Client) (xep.Interface, error) {
-	conn := &Connection{
+	conn := &Conn{
 		Client:  c,
 		stanzas: make(chan core.Stanza, 100),
 	}
 
-	discovery := conn.MustGetXEP("disco").(*disco.Connection)
+	discovery := conn.MustGetXEP("disco").(*disco.Conn)
 	discovery.AddFeature("jabber:iq:last")
 
 	c.SubscribeStanzas(conn.stanzas)
@@ -44,7 +44,7 @@ func wrap(c core.Client) (xep.Interface, error) {
 	return conn, nil
 }
 
-func (c *Connection) read() {
+func (c *Conn) read() {
 	for stanza := range c.stanzas {
 		if iq, ok := stanza.(*core.IQ); ok {
 			if iq.Query.Space == "jabber:iq:last" && iq.Type == "get" {
@@ -67,7 +67,7 @@ func Reply(t *LastActivityRequest, seconds uint64) {
 // Query sends a Last Activity query to an entity. The interpretation
 // of the returned values depends on whether the entity is an account,
 // resource or service.
-func (c *Connection) Query(who string) (seconds uint64, text string, err error) {
+func (c *Conn) Query(who string) (seconds uint64, text string, err error) {
 	ch, _ := c.SendIQ(who, "get", struct {
 		XMLName xml.Name `xml:"jabber:iq:last query"`
 	}{})
