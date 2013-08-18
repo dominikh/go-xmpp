@@ -345,9 +345,12 @@ func NewConn() *Conn {
 // If you want a default connection and do not want to set specific
 // options like the emitter, consider using the package-level function
 // Dial instead.
-func (c *Conn) Dial() (errors []error, ok bool) {
+func (c *Conn) Dial() []error {
+	var errors []error
+
 	if c.Conn == nil {
-		addrs, errors := Resolve(c.host)
+		var addrs []shared.Address
+		addrs, errors = resolve(c.host)
 		connected := false
 	connectLoop:
 		for _, addr := range addrs {
@@ -365,7 +368,7 @@ func (c *Conn) Dial() (errors []error, ok bool) {
 		}
 
 		if !connected {
-			return errors, false
+			return errors
 		}
 	}
 
@@ -375,9 +378,10 @@ func (c *Conn) Dial() (errors []error, ok bool) {
 		// FIXME consider sending a </stream> to cleanly terminate the
 		// connection
 		c.Conn.Close()
+		return errors
 	}
 
-	return errors, err == nil
+	return nil
 }
 
 // Dial connects to an XMPP server and authenticates with the provided
@@ -386,14 +390,14 @@ func (c *Conn) Dial() (errors []error, ok bool) {
 // A default Conn with default values for emitter etc will be
 // created. If you need more control over the created connection, use
 // NewConn instead.
-func Dial(user, host, password string) (client Client, errors []error, ok bool) {
+func Dial(user, host, password string) (client Client, errors []error) {
 	c := NewConn()
 	c.host = host
 	c.user = user
 	c.password = password
 
-	errs, ok := c.Dial()
-	return c, errs, ok
+	errors = c.Dial()
+	return c, errors
 }
 
 func (c *Conn) initializeXMLCoders() {

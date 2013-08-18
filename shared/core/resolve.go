@@ -25,12 +25,9 @@ func ResolveFQDN(host, service string) ([]Address, []error) {
 
 	_, srvs, err := net.LookupSRV(service, "tcp", host)
 	if err != nil {
-		errors = append(errors, err)
-
 		ips, err := resolve(host)
 		if err != nil {
-			errors = append(errors, err)
-			return nil, errors
+			return nil, []error{err}
 		}
 
 		var port int
@@ -43,11 +40,11 @@ func ResolveFQDN(host, service string) ([]Address, []error) {
 			panic("invalid service name")
 		}
 
-		return []Address{Address{ips, port}}, errors
+		return []Address{Address{ips, port}}, nil
 	}
 
 	if len(srvs) == 1 && srvs[0].Target == "." {
-		return nil, nil
+		return nil, nil // FIXME return some sort of error
 	}
 
 	addresses := make([]Address, 0, len(srvs))
@@ -61,7 +58,7 @@ func ResolveFQDN(host, service string) ([]Address, []error) {
 		}
 	}
 
-	return addresses, nil
+	return addresses, errors
 }
 
 func resolve(host string) ([]net.IP, error) {
