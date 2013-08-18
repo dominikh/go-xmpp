@@ -1,4 +1,4 @@
-package rfc6121
+package im
 
 // TODO implement roster versioning
 // TODO handle a roster, that keeps track of presence, the contacts
@@ -6,13 +6,13 @@ package rfc6121
 
 import (
 	"encoding/xml"
-	"honnef.co/go/xmpp/client/rfc6120"
+	"honnef.co/go/xmpp/client/core"
 )
 
 var _ Client = &Conn{}
 
 type Client interface {
-	rfc6120.Client
+	core.Client
 	GetRoster() Roster
 	AddToRoster(item RosterItem) error
 	RemoveFromRoster(jid string) error
@@ -23,38 +23,38 @@ type Client interface {
 	BecomeAvailable()
 	BecomeUnavailable()
 	SendMessage(typ, to, message string)
-	Reply(orig *rfc6120.Message, reply string)
+	Reply(orig *core.Message, reply string)
 }
 
 type Conn struct {
-	rfc6120.Client
-	stanzas chan rfc6120.Stanza
+	core.Client
+	stanzas chan core.Stanza
 }
 
-func Wrap(c rfc6120.Client) *Conn {
+func Wrap(c core.Client) *Conn {
 	conn := &Conn{
 		Client:  c,
-		stanzas: make(chan rfc6120.Stanza, 100),
+		stanzas: make(chan core.Stanza, 100),
 	}
 	go conn.read()
 	c.SubscribeStanzas(conn.stanzas)
 	return conn
 }
 
-type AuthorizationRequest rfc6120.Presence
+type AuthorizationRequest core.Presence
 
 func (c *Conn) read() {
 	for stanza := range c.stanzas {
 		// TODO way to subscribe to roster events (roster push, subscription requests, ...)
 		switch t := stanza.(type) {
-		case *rfc6120.IQ:
+		case *core.IQ:
 			if t.Query.Space == "jabber:iq:roster" && t.Type == "set" {
 				// TODO check 'from' ("Security Warning:
 				// Traditionally, a roster push included no 'from'
 				// address")
 				c.SendIQReply(t, "result", nil)
 			}
-		case *rfc6120.Presence:
+		case *core.Presence:
 			if t.Type == "subscribe" {
 				c.EmitStanza((*AuthorizationRequest)(t))
 				// c.subscribers.send((*AuthorizationRequest)(t))
@@ -109,8 +109,8 @@ func (c *Conn) RemoveFromRoster(jid string) error {
 }
 
 func (c *Conn) Subscribe(jid string) (cookie string, err error) {
-	cookie, err = c.SendPresence(rfc6120.Presence{
-		Header: rfc6120.Header{
+	cookie, err = c.SendPresence(core.Presence{
+		Header: core.Header{
 			To:   jid,
 			Type: "subscribe",
 		},
@@ -120,8 +120,8 @@ func (c *Conn) Subscribe(jid string) (cookie string, err error) {
 }
 
 func (c *Conn) Unsubscribe(jid string) (cookie string, err error) {
-	cookie, err = c.SendPresence(rfc6120.Presence{
-		Header: rfc6120.Header{
+	cookie, err = c.SendPresence(core.Presence{
+		Header: core.Header{
 			To:   jid,
 			Type: "unsubscribe",
 		},
@@ -131,8 +131,8 @@ func (c *Conn) Unsubscribe(jid string) (cookie string, err error) {
 }
 
 func (c *Conn) ApproveSubscription(auth *AuthorizationRequest) {
-	c.SendPresence(rfc6120.Presence{
-		Header: rfc6120.Header{
+	c.SendPresence(core.Presence{
+		Header: core.Header{
 			To:   auth.From,
 			Type: "subscribed",
 		},
@@ -144,8 +144,8 @@ func (c *Conn) PreapproveSubscription(jid string) error {
 		// FIXME return error
 	}
 
-	c.SendPresence(rfc6120.Presence{
-		Header: rfc6120.Header{
+	c.SendPresence(core.Presence{
+		Header: core.Header{
 			To:   jid,
 			Type: "subscribed",
 		},
@@ -155,8 +155,8 @@ func (c *Conn) PreapproveSubscription(jid string) error {
 }
 
 func (c *Conn) DenySubscription(auth *AuthorizationRequest) {
-	c.SendPresence(rfc6120.Presence{
-		Header: rfc6120.Header{
+	c.SendPresence(core.Presence{
+		Header: core.Header{
 			To:   auth.From,
 			Type: "unsubscribed",
 		},
@@ -164,8 +164,8 @@ func (c *Conn) DenySubscription(auth *AuthorizationRequest) {
 }
 
 func (c *Conn) RevokeSubscription(jid string) {
-	c.SendPresence(rfc6120.Presence{
-		Header: rfc6120.Header{
+	c.SendPresence(core.Presence{
+		Header: core.Header{
 			To:   jid,
 			Type: "unsubscribed",
 		},
@@ -174,13 +174,13 @@ func (c *Conn) RevokeSubscription(jid string) {
 
 func (c *Conn) BecomeAvailable() {
 	// TODO document SendPresence (rfc6120) for more specific needs
-	c.SendPresence(rfc6120.Presence{})
+	c.SendPresence(core.Presence{})
 }
 
 func (c *Conn) BecomeUnavailable() {
 	// TODO document SendPresence (rfc6120) for more specific needs
 	// TODO can't be have one global xml encoder?
-	c.Encode(rfc6120.Presence{Header: rfc6120.Header{Type: "unavailable"}})
+	c.Encode(core.Presence{Header: core.Header{Type: "unavailable"}})
 }
 
 func (c *Conn) SendMessage(typ, to, message string) {
@@ -191,8 +191,8 @@ func (c *Conn) SendMessage(typ, to, message string) {
 	// TODO support <thread>
 	// TODO support subject
 
-	m := rfc6120.Message{
-		Header: rfc6120.Header{
+	m := core.Message{
+		Header: core.Header{
 			From: c.JID(),
 			To:   to,
 			Type: typ,
@@ -203,7 +203,7 @@ func (c *Conn) SendMessage(typ, to, message string) {
 	c.Encode(m)
 }
 
-func (c *Conn) Reply(orig *rfc6120.Message, reply string) {
+func (c *Conn) Reply(orig *core.Message, reply string) {
 	// TODO threading
 	// TODO use bare JID if full JID isn't up to date anymore
 	// TODO support subject

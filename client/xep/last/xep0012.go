@@ -6,36 +6,36 @@
 // Using this package necessitates reacting to the synthetic
 // LastActivityRequest stanza by replying to it with the correct idle
 // time (see (*LastActivityRequest).Reply()).
-package xep0012
+package last
 
 import (
 	"encoding/xml"
-	"honnef.co/go/xmpp/client/rfc6120"
-	"honnef.co/go/xmpp/client/xep0030"
+	"honnef.co/go/xmpp/client/core"
+	"honnef.co/go/xmpp/client/xep/disco"
 	"honnef.co/go/xmpp/shared/xep"
 )
 
 type Connection struct {
-	rfc6120.Client
-	stanzas chan rfc6120.Stanza
+	core.Client
+	stanzas chan core.Stanza
 }
 
 type LastActivityRequest struct {
-	*rfc6120.IQ
+	*core.IQ
 	c *Connection
 }
 
 func init() {
-	rfc6120.RegisterXEP(12, wrap, 30)
+	core.RegisterXEP(12, wrap, 30)
 }
 
-func wrap(c rfc6120.Client) (xep.Interface, error) {
+func wrap(c core.Client) (xep.Interface, error) {
 	conn := &Connection{
 		Client:  c,
-		stanzas: make(chan rfc6120.Stanza, 100),
+		stanzas: make(chan core.Stanza, 100),
 	}
 
-	discovery := conn.MustGetXEP(30).(*xep0030.Connection)
+	discovery := conn.MustGetXEP(30).(*disco.Connection)
 	discovery.AddFeature("jabber:iq:last")
 
 	c.SubscribeStanzas(conn.stanzas)
@@ -46,7 +46,7 @@ func wrap(c rfc6120.Client) (xep.Interface, error) {
 
 func (c *Connection) read() {
 	for stanza := range c.stanzas {
-		if iq, ok := stanza.(*rfc6120.IQ); ok {
+		if iq, ok := stanza.(*core.IQ); ok {
 			if iq.Query.Space == "jabber:iq:last" && iq.Type == "get" {
 				c.EmitStanza(&LastActivityRequest{iq, c})
 			}

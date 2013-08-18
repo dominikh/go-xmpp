@@ -1,4 +1,4 @@
-package rfc6120
+package core
 
 import (
 	"net"

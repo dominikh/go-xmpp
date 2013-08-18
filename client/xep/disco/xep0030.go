@@ -1,7 +1,7 @@
-package xep0030
+package disco
 
 import (
-	"honnef.co/go/xmpp/client/rfc6120"
+	"honnef.co/go/xmpp/client/core"
 
 	"encoding/xml"
 	"honnef.co/go/xmpp/shared/xep"
@@ -9,21 +9,21 @@ import (
 )
 
 type Connection struct {
-	rfc6120.Client
+	core.Client
 	sync.RWMutex
-	stanzas    chan rfc6120.Stanza
+	stanzas    chan core.Stanza
 	identities []Identity
 	features   []Feature
 }
 
 func init() {
-	rfc6120.RegisterXEP(30, wrap)
+	core.RegisterXEP(30, wrap)
 }
 
-func wrap(c rfc6120.Client) (xep.Interface, error) {
+func wrap(c core.Client) (xep.Interface, error) {
 	conn := &Connection{
 		Client:  c,
-		stanzas: make(chan rfc6120.Stanza, 100),
+		stanzas: make(chan core.Stanza, 100),
 	}
 
 	conn.AddFeature("http://jabber.org/protocol/disco#info")
@@ -49,7 +49,7 @@ func (c *Connection) AddFeature(f string) {
 func (c *Connection) read() {
 	// TODO support queries for items/item nodes
 	for stanza := range c.stanzas {
-		if iq, ok := stanza.(*rfc6120.IQ); ok {
+		if iq, ok := stanza.(*core.IQ); ok {
 			if iq.Query.Space == "http://jabber.org/protocol/disco#info" && iq.Type == "get" {
 				// TODO support queries targetted at nodes
 				c.RLock()
@@ -103,7 +103,7 @@ func (c *Connection) GetInfoFromNode(to, node string) (Info, error) {
 }
 
 // FIXME return error
-func parseInfo(s *rfc6120.IQ) (Info, error) {
+func parseInfo(s *core.IQ) (Info, error) {
 	var result Info
 
 	if s.IsError() {
@@ -117,7 +117,7 @@ func parseInfo(s *rfc6120.IQ) (Info, error) {
 }
 
 // FIXME return error
-func GetInfo(c rfc6120.Client, to string) (Info, error) {
+func GetInfo(c core.Client, to string) (Info, error) {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#info query"`
 	}{})
@@ -126,7 +126,7 @@ func GetInfo(c rfc6120.Client, to string) (Info, error) {
 }
 
 // FIXME return error
-func GetInfoFromNode(c rfc6120.Client, to, node string) (Info, error) {
+func GetInfoFromNode(c core.Client, to, node string) (Info, error) {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#info query"`
 		Node    string   `xml:"node,attr"`
@@ -143,7 +143,7 @@ func (c *Connection) GetItemsFromNode(to, node string) ([]Item, error) {
 	return GetItemsFromNode(c, to, node)
 }
 
-func parseItems(s *rfc6120.IQ) ([]Item, error) {
+func parseItems(s *core.IQ) ([]Item, error) {
 	var items items
 
 	if s.IsError() {
@@ -155,7 +155,7 @@ func parseItems(s *rfc6120.IQ) ([]Item, error) {
 	return items.Items, nil
 }
 
-func GetItems(c rfc6120.Client, to string) ([]Item, error) {
+func GetItems(c core.Client, to string) ([]Item, error) {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#items query"`
 	}{})
@@ -163,7 +163,7 @@ func GetItems(c rfc6120.Client, to string) ([]Item, error) {
 	return parseItems(<-ch)
 }
 
-func GetItemsFromNode(c rfc6120.Client, to, node string) ([]Item, error) {
+func GetItemsFromNode(c core.Client, to, node string) ([]Item, error) {
 	ch, _ := c.SendIQ(to, "get", struct {
 		XMLName xml.Name `xml:"http://jabber.org/protocol/disco#items query"`
 		Node    string   `xml:"node,attr"`

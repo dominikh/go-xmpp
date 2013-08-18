@@ -1,4 +1,4 @@
-package rfc6120
+package core
 
 // TODO make sure whitespace keepalive doesn't break our code
 // TODO check namespaces everywhere
@@ -8,7 +8,7 @@ package rfc6120
 // errors for unsupported namespaces (section 8.4)
 
 import (
-	shared "honnef.co/go/xmpp/shared/rfc6120"
+	shared "honnef.co/go/xmpp/shared/core"
 	"honnef.co/go/xmpp/shared/xep"
 
 	"bytes"
