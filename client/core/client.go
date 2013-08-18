@@ -357,7 +357,7 @@ func (c *Conn) Dial() []error {
 			for _, ip := range addr.IPs {
 				conn, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: ip, Port: addr.Port})
 				if err != nil {
-					errors = append(errors, err)
+					errors = append(errors, ConnectError{err, "Could not connect"})
 					continue
 				}
 
