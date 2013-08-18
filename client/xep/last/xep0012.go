@@ -26,7 +26,7 @@ type LastActivityRequest struct {
 }
 
 func init() {
-	core.RegisterXEP(12, wrap, 30)
+	core.RegisterXEP("last", wrap, "disco")
 }
 
 func wrap(c core.Client) (xep.Interface, error) {
@@ -35,7 +35,7 @@ func wrap(c core.Client) (xep.Interface, error) {
 		stanzas: make(chan core.Stanza, 100),
 	}
 
-	discovery := conn.MustGetXEP(30).(*disco.Connection)
+	discovery := conn.MustGetXEP("disco").(*disco.Connection)
 	discovery.AddFeature("jabber:iq:last")
 
 	c.SubscribeStanzas(conn.stanzas)

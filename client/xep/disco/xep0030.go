@@ -17,7 +17,7 @@ type Connection struct {
 }
 
 func init() {
-	core.RegisterXEP(30, wrap)
+	core.RegisterXEP("disco", wrap)
 }
 
 func wrap(c core.Client) (xep.Interface, error) {
