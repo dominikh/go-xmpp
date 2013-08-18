@@ -134,7 +134,7 @@ type Client interface {
 	MustGetXEP(name string) xep.Interface
 }
 
-func Resolve(host string) ([]shared.Address, []error) {
+func resolve(host string) ([]shared.Address, []error) {
 	return shared.ResolveFQDN(host, "xmpp-client")
 }
 
