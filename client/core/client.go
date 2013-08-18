@@ -405,13 +405,13 @@ func (c *Conn) initializeXMLCoders() {
 	c.encoder = xml.NewEncoder(c)
 }
 
-// TODO document that/where we return a ConnectionError
-type ConnectionError struct {
+// TODO document that/where we return a ConnectError
+type ConnectError struct {
 	UnderlyingError error
 	label           string
 }
 
-func (e ConnectionError) Error() string {
+func (e ConnectError) Error() string {
 	return fmt.Sprintf("%s: %s", e.label, e.UnderlyingError.Error())
 }
 
@@ -422,23 +422,23 @@ func (c *Conn) setUp() error {
 	for {
 		err = c.openStream()
 		if err != nil {
-			return ConnectionError{err, "Error while opening stream"}
+			return ConnectError{err, "Error while opening stream"}
 		}
 
 		err = c.receiveStream()
 		if err != nil {
-			return ConnectionError{err, "Error receiving stream"}
+			return ConnectError{err, "Error receiving stream"}
 		}
 
 		err = c.parseFeatures()
 		if err != nil {
-			return ConnectionError{err, "Error parsing stream features"}
+			return ConnectError{err, "Error parsing stream features"}
 		}
 
 		if c.features.Includes("starttls") {
 			err = c.startTLS()
 			if err != nil {
-				return ConnectionError{err, "Error establishing TLS connection"}
+				return ConnectError{err, "Error establishing TLS connection"}
 			}
 			continue
 		}
@@ -446,7 +446,7 @@ func (c *Conn) setUp() error {
 		if c.features.Requires("sasl") {
 			err = c.sasl()
 			if err != nil {
-				return ConnectionError{err, "Error during SASL"}
+				return ConnectError{err, "Error during SASL"}
 			}
 			continue
 		}
