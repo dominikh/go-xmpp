@@ -455,16 +455,9 @@ func (c *Conn) setUp() error {
 	return nil
 }
 
-// FIXME is the way this interface looks really a good idea? Maybe it
-// can be solved differently. Maybe have a single ErrorReply(*Error)
-// function. It would cause for some duplicated code, but have way
-// less methods and reflection going on.
 type Stanza interface {
 	ID() string
 	IsError() bool
-	ErrorReply(*Error) Stanza // FIXME reconsider this idea as well,
-	// since it needs to be exported and
-	// that might confuse users
 }
 
 type Header struct {
@@ -493,19 +486,6 @@ type Message struct {
 	Inner   []byte `xml:",innerxml"`
 }
 
-func (m Message) ErrorReply(error *Error) Stanza {
-	m.Error = error
-
-	m.To, m.From = m.From, m.To
-	m.Type = "error"
-	m.Subject = ""
-	m.Body = ""
-	m.Thread = ""
-	m.Inner = nil
-
-	return m
-}
-
 type Text struct {
 	Lang string `xml:"lang,attr"`
 	Body string `xml:",chardata"`
@@ -522,19 +502,6 @@ type Presence struct {
 	Priority int    `xml:"priority,omitempty"`
 	Error    *Error `xml:"error,omitempty"`
 	Inner    []byte `xml:",innerxml"`
-}
-
-func (p Presence) ErrorReply(error *Error) Stanza {
-	p.Error = error
-
-	p.To, p.From = p.From, p.To
-	p.Type = "error"
-	p.Show = ""
-	p.Status = ""
-	p.Priority = 0
-	p.Inner = nil
-
-	return p
 }
 
 func (p Presence) IsError() bool {
@@ -556,17 +523,6 @@ type IQ struct { // info/query
 	Error *Error   `xml:"error"`
 	Query xml.Name `xml:"query"`
 	Inner []byte   `xml:",innerxml"`
-}
-
-func (i IQ) ErrorReply(error *Error) Stanza {
-	i.Error = error
-
-	i.To, i.From = i.From, i.To
-	i.Type = "error"
-	i.Query = xml.Name{}
-	i.Inner = nil
-
-	return i
 }
 
 func (iq IQ) IsError() bool {
@@ -630,8 +586,6 @@ func (streamError) ID() string {
 func (streamError) IsError() bool {
 	return true
 }
-
-func (streamError) ErrorReply(*Error) Stanza { return nil }
 
 func (c *Conn) JID() string {
 	return c.jid
@@ -1000,6 +954,30 @@ func (c *Conn) SendError(inReplyTo Stanza, typ string, text string, errors ...XM
 		Errors: XMPPErrors(errors),
 	}
 
-	response := inReplyTo.ErrorReply(error)
+	response := errorReply(inReplyTo, error)
 	c.encoder.Encode(response)
+}
+
+// TODO consider adding an ErrorReply interface that is optional to
+// implement, for types that aren't structs.
+func errorReply(stanza Stanza, error *Error) Stanza {
+	sV := reflect.ValueOf(stanza)
+	if sV.Kind() == reflect.Ptr {
+		sV = sV.Elem()
+	}
+
+	if sV.Kind() != reflect.Struct {
+		panic("Cannot use errorReply with non-struct value")
+	}
+
+	to := sV.FieldByName("To")
+	from := sV.FieldByName("From")
+
+	reply := reflect.New(sV.Type())
+	reply.Elem().FieldByName("To").Set(from)
+	reply.Elem().FieldByName("From").Set(to)
+	reply.Elem().FieldByName("Type").SetString("error")
+	reply.Elem().FieldByName("Error").Set(reflect.ValueOf(error))
+
+	return reply.Interface().(Stanza)
 }
