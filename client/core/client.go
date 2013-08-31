@@ -491,7 +491,7 @@ type Message struct {
 	Header
 
 	Subject string `xml:"subject,omitempty"`
-	Body    string `xml:"body,omitempty"` // TODO omitempty?
+	Body    string `xml:"body,omitempty"` // TODO support multiple bodies in a single message
 	Error   *Error `xml:"error,omitempty"`
 	Thread  string `xml:"thread,omitempty"`
 	Inner   []byte `xml:",innerxml"`
@@ -563,7 +563,7 @@ func (x *XMPPErrors) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 type Error struct {
 	XMLName xml.Name   `xml:"jabber:client error"`
 	Type    string     `xml:"type,attr"`
-	Text    string     `xml:"text"` // TODO do we need to specify the namespace here?
+	Text    string     `xml:"urn:ietf:params:xml:ns:xmpp-streams text,omitempty"` // TODO xml:lang
 	Errors  XMPPErrors `xml:",any"`
 }
 

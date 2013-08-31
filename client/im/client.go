@@ -22,7 +22,7 @@ type Client interface {
 	DenySubscription(auth *AuthorizationRequest)
 	BecomeAvailable()
 	BecomeUnavailable()
-	SendMessage(typ, to, message string)
+	SendMessage(typ, to string, message core.Message)
 	Reply(orig *core.Message, reply string)
 }
 
@@ -181,32 +181,28 @@ func (c *Conn) BecomeUnavailable() {
 	c.Encode(core.Presence{Header: core.Header{Type: "unavailable"}})
 }
 
-func (c *Conn) SendMessage(typ, to, message string) {
+func (c *Conn) SendMessage(typ, to string, message core.Message) {
 	// TODO support extended items in the mssage
 	// TODO if `to` is a bare JID, see if we know about a full JID to
-	// use instead
-	// TODO actually keep track of JIDs
-	// TODO support <thread>
-	// TODO support subject
-
-	m := core.Message{
-		Header: core.Header{
-			From: c.JID(),
-			To:   to,
-			Type: typ,
-		},
-		Body: message,
+	// use instead. if it's a full jid, check if it's outdated.
+	// Probably make these two things explicit by providing a function
+	// on the roster that the user has to call, that translates a jid
+	// into a better one. replying should probably automatically use
+	// it.
+	message.Header = core.Header{
+		From: c.JID(),
+		To:   to,
+		Type: typ,
 	}
 
-	c.Encode(m)
+	c.Encode(message)
 }
 
 func (c *Conn) Reply(orig *core.Message, reply string) {
-	// TODO threading
 	// TODO use bare JID if full JID isn't up to date anymore
 	// TODO support subject
 	// TODO support extended items
-	c.SendMessage(orig.Type, orig.From, reply)
+	c.SendMessage(orig.Type, orig.From, core.Message{Body: reply, Thread: orig.Thread})
 }
 
 // The user's client SHOULD address the initial message in a chat
