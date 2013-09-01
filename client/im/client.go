@@ -26,42 +26,47 @@ type Client interface {
 	Reply(orig *core.Message, reply string)
 }
 
+func init() {
+	core.RegisterXEP("im", wrap)
+}
+
 type Conn struct {
 	core.Client
-	stanzas chan core.Stanza
+}
+
+func wrap(c core.Client) (core.XEP, error) {
+	conn := &Conn{
+		Client: c,
+	}
+	return conn, nil
 }
 
 func Wrap(c core.Client) *Conn {
-	conn := &Conn{
-		Client:  c,
-		stanzas: make(chan core.Stanza, 100),
-	}
-	go conn.read()
-	c.SubscribeStanzas(conn.stanzas)
-	return conn
+	xep, _ := c.RegisterXEP("im")
+	return xep.(*Conn)
 }
 
 type AuthorizationRequest core.Presence
 
-func (c *Conn) read() {
-	for stanza := range c.stanzas {
-		// TODO way to subscribe to roster events (roster push, subscription requests, ...)
-		switch t := stanza.(type) {
-		case *core.IQ:
-			if t.Query.Space == "jabber:iq:roster" && t.Type == "set" {
-				// TODO check 'from' ("Security Warning:
-				// Traditionally, a roster push included no 'from'
-				// address")
-				c.SendIQReply(t, "result", nil)
-			}
-		case *core.Presence:
-			if t.Type == "subscribe" {
-				c.EmitStanza((*AuthorizationRequest)(t))
-			}
-		default:
-			// TODO track JID etc
+func (c *Conn) Process(stanza core.Stanza) ([]core.Stanza, error) {
+	// TODO way to subscribe to roster events (roster push, subscription requests, ...)
+	switch t := stanza.(type) {
+	case *core.IQ:
+		if t.Query.Space == "jabber:iq:roster" && t.Type == "set" {
+			// TODO check 'from' ("Security Warning:
+			// Traditionally, a roster push included no 'from'
+			// address")
+			c.SendIQReply(t, "result", nil)
 		}
+	case *core.Presence:
+		if t.Type == "subscribe" {
+			return []core.Stanza{(*AuthorizationRequest)(t)}, nil
+		}
+	default:
+		// TODO track JID etc
 	}
+
+	return nil, nil
 }
 
 type Roster []RosterItem
