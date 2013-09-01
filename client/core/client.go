@@ -551,12 +551,8 @@ type streamError struct {
 	Text    string   `xml:"text"`
 }
 
-func (streamError) ID() string {
-	return ""
-}
-
-func (streamError) IsError() bool {
-	return true
+func (e streamError) Error() string {
+	return fmt.Sprintf("Stream error: <%s> %s", e.Any.Local, e.Text)
 }
 
 func (c *Conn) JID() string {
@@ -576,16 +572,19 @@ type invalidNamespace struct {
 }
 
 func (c *Conn) sendStreamError(e interface{}) {
-	c.encoder.EncodeElement(e, xml.StartElement{
+	err := c.encoder.EncodeElement(e, xml.StartElement{
 		Name: xml.Name{
 			Local: "error",
 			Space: nsStream,
 		},
 	})
+
+	if err != nil {
+		panic("Internal error sending stream error: " + err.Error())
+	}
 }
 
 func (c *Conn) read() {
-	// TODO find a way to report error
 	for {
 		t, err := c.nextStartElement()
 
@@ -602,7 +601,14 @@ func (c *Conn) read() {
 		var nv Stanza
 		switch t.Name.Space + " " + t.Name.Local {
 		case nsStream + " error":
-			nv = &streamError{}
+			streamErr := &streamError{}
+			err := c.decoder.DecodeElement(err, t)
+			if err != nil {
+				panic("Internal error: Could not unmarshal XML: " + err.Error())
+			}
+			c.stanzas <- taggedStanza{err: streamErr}
+			c.Close()
+			return
 		case nsClient + " message":
 			nv = &Message{}
 		case nsClient + " presence":
@@ -632,11 +638,6 @@ func (c *Conn) read() {
 			c.mu.Unlock()
 		} else {
 			c.stanzas <- taggedStanza{stanza: nv}
-		}
-
-		if _, ok := nv.(*streamError); ok {
-			c.Close()
-			return
 		}
 	}
 }
@@ -853,6 +854,7 @@ func (c *Conn) Close() {
 
 	fmt.Fprint(c, "</stream:stream>")
 	c.closing = true
+	close(c.stanzas)
 	// TODO implement timeout for waiting on </stream> from other end
 
 	// TODO "to help prevent a truncation attack the party that is
