@@ -9,7 +9,6 @@ package core
 
 import (
 	shared "honnef.co/go/xmpp/shared/core"
-	"honnef.co/go/xmpp/shared/xep"
 
 	"bytes"
 	"crypto/tls"
@@ -35,7 +34,11 @@ const (
 	nsClient  = "jabber:client"
 )
 
-type XEPWrapper func(Client) (xep.Interface, error)
+type XEP interface {
+	Process(Stanza) ([]Stanza, error)
+}
+
+type XEPWrapper func(Client) (XEP, error)
 
 var SupportedMechanisms = []string{"PLAIN"}
 var errTypes = make(map[xml.Name]XMPPError)
@@ -115,8 +118,7 @@ type Client interface {
 	SendIQReply(iq *IQ, typ string, value interface{})
 	SendPresence(p Presence) (cookie string, err error)
 	SendError(inReplyTo Stanza, typ string, text string, errors ...XMPPError)
-	EmitStanza(s Stanza)
-	SubscribeStanzas(ch chan<- Stanza)
+	NextStanza() (Stanza, error)
 	JID() string
 	Features() Features
 	Close()
@@ -124,14 +126,14 @@ type Client interface {
 	// RegisterXEP registers a XEP and all its dependencies, if
 	// required. It returns a XEP-wrapped connection and an error, if
 	// any.
-	RegisterXEP(name string) (xep.Interface, error)
+	RegisterXEP(name string) (XEP, error)
 
 	// GetXEP tries to return a registered XEP.
-	GetXEP(name string) (xep.Interface, bool)
+	GetXEP(name string) (XEP, bool)
 
 	// MustGetXEP behaves like GetXEP but panics if the XEP hasn't
 	// been registered.
-	MustGetXEP(name string) xep.Interface
+	MustGetXEP(name string) XEP
 }
 
 func resolve(host string) ([]shared.Address, []error) {
@@ -151,49 +153,6 @@ func findCompatibleMechanism(ours, theirs []string) string {
 	return ""
 }
 
-// An Emitter is used to send incoming stanzas to all subscribers. See
-// DroppingEmitter for the default emitter used.
-type Emitter interface {
-	Emit(stanza Stanza) (delivered bool)
-	Subscribe(ch chan<- Stanza)
-	// TODO consider adding Unsubscribe
-}
-
-// DroppingEmitter is a basic emitter that attempts a non-blocking
-// send to each individual subscriber and drops stanzas if the
-// subscriber isn't ready to receive.
-type DroppingEmitter struct {
-	mu    sync.RWMutex
-	chans []chan<- Stanza
-}
-
-// Emit sends a stanza to all subscribers and reports whether at least
-// one of them was able to receive it.
-func (s *DroppingEmitter) Emit(stanza Stanza) (delivered bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	// TODO should we return true when there are no channels at all?
-	// if so, documented that in the interface
-
-	for _, ch := range s.chans {
-		select {
-		case ch <- stanza:
-			delivered = true
-		default:
-		}
-	}
-
-	return
-}
-
-// Subscribe adds a subscriber.
-func (s *DroppingEmitter) Subscribe(ch chan<- Stanza) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.chans = append(s.chans, ch)
-}
-
 type Conn struct {
 	net.Conn
 	extensions *extensions
@@ -209,25 +168,41 @@ type Conn struct {
 	jid        string
 	callbacks  map[string]chan *IQ
 	closing    bool
-	Emitter    Emitter
+	stanzas    chan taggedStanza
+}
+
+type namedXEP struct {
+	name string
+	xep  XEP
 }
 
 type extensions struct {
 	sync.RWMutex
-	m map[string]xep.Interface
+	m map[string]XEP
+	l []namedXEP
 }
 
-func (e *extensions) get(name string) (xep.Interface, bool) {
+func (e *extensions) get(name string) (XEP, bool) {
 	e.RLock()
 	defer e.RUnlock()
 	x, ok := e.m[name]
 	return x, ok
 }
 
-func (e *extensions) set(name string, x xep.Interface) {
+func (e *extensions) set(name string, x XEP) {
 	e.Lock()
 	defer e.Unlock()
+	e.l = append(e.l, namedXEP{name, x})
+
 	e.m[name] = x
+}
+
+func (e *extensions) list() []namedXEP {
+	e.Lock()
+	defer e.Unlock()
+	list := make([]namedXEP, len(e.l))
+	copy(list, e.l)
+	return list
 }
 
 type DependencyError struct {
@@ -240,7 +215,7 @@ func (d DependencyError) Error() string {
 		d.XEP, d.Missing)
 }
 
-func (c *Conn) RegisterXEP(name string) (xep.Interface, error) {
+func (c *Conn) RegisterXEP(name string) (XEP, error) {
 	// Do not register the same XEP twice
 	if conn, ok := c.extensions.get(name); ok {
 		return conn, nil
@@ -271,7 +246,7 @@ func (c *Conn) RegisterXEP(name string) (xep.Interface, error) {
 	return conn, nil
 }
 
-func (c *Conn) MustRegisterXEP(name string) xep.Interface {
+func (c *Conn) MustRegisterXEP(name string) XEP {
 	ret, err := c.RegisterXEP(name)
 	if err != nil {
 		panic(err.Error())
@@ -280,7 +255,7 @@ func (c *Conn) MustRegisterXEP(name string) xep.Interface {
 	return ret
 }
 
-func (c *Conn) GetXEP(name string) (xep.Interface, bool) {
+func (c *Conn) GetXEP(name string) (XEP, bool) {
 	c.extensions.RLock()
 	defer c.extensions.RUnlock()
 
@@ -289,21 +264,13 @@ func (c *Conn) GetXEP(name string) (xep.Interface, bool) {
 	return x, ok
 }
 
-func (c *Conn) MustGetXEP(name string) xep.Interface {
+func (c *Conn) MustGetXEP(name string) XEP {
 	x, ok := c.GetXEP(name)
 	if !ok {
 		panic(fmt.Sprintf("XEP '%s' is not registered", name))
 	}
 
 	return x
-}
-
-func (c *Conn) EmitStanza(stanza Stanza) {
-	c.Emitter.Emit(stanza)
-}
-
-func (c *Conn) SubscribeStanzas(ch chan<- Stanza) {
-	c.Emitter.Subscribe(ch)
 }
 
 func generateCookies(ch chan<- string, quit <-chan struct{}) {
@@ -337,8 +304,8 @@ func NewConn() *Conn {
 		cookie:     cookieChan,
 		cookieQuit: cookieQuitChan,
 		callbacks:  make(map[string]chan *IQ),
-		extensions: &extensions{m: make(map[string]xep.Interface)},
-		Emitter:    &DroppingEmitter{},
+		extensions: &extensions{m: make(map[string]XEP)},
+		stanzas:    make(chan taggedStanza),
 	}
 
 }
@@ -394,9 +361,8 @@ func (c *Conn) Dial() []error {
 // Dial connects to an XMPP server and authenticates with the provided
 // user name and password.
 //
-// A default Conn with default values for emitter etc will be
-// created. If you need more control over the created connection, use
-// NewConn instead.
+// A default Conn with default values will be created. If you need
+// more control over the created connection, use NewConn instead.
 func Dial(user, host, password string) (client Client, errors []error) {
 	c := NewConn()
 	c.host = host
@@ -626,11 +592,11 @@ func (c *Conn) read() {
 		if err != nil {
 			if err != io.EOF {
 				c.sendStreamError(notWellFormed{})
+				c.stanzas <- taggedStanza{err: err}
 			}
 
 			c.Close()
 			return
-
 		}
 
 		var nv Stanza
@@ -649,7 +615,10 @@ func (c *Conn) read() {
 		}
 
 		// Unmarshal into that storage.
-		c.decoder.DecodeElement(nv, t)
+		err = c.decoder.DecodeElement(nv, t)
+		if err != nil {
+			panic("Internal error: Could not unmarshal XML: " + err.Error())
+		}
 		// TODO what about message and presence? They can return
 		// errors, too, but they don't have any ID associated with
 		// them. how do we want to present such kinds of errors to the
@@ -662,11 +631,7 @@ func (c *Conn) read() {
 			}
 			c.mu.Unlock()
 		} else {
-			delivered := c.Emitter.Emit(nv)
-			// FIXME should we really send an error to the sender?
-			if !delivered {
-				c.SendError(nv, "wait", "", ErrResourceConstraint{})
-			}
+			c.stanzas <- taggedStanza{stanza: nv}
 		}
 
 		if _, ok := nv.(*streamError); ok {
@@ -959,6 +924,44 @@ func (c *Conn) SendError(inReplyTo Stanza, typ string, text string, errors ...XM
 
 	response := errorReply(inReplyTo, error)
 	c.encoder.Encode(response) // FIXME handle error
+}
+
+type taggedStanza struct {
+	stanza Stanza
+	err    error
+	sender namedXEP
+}
+
+func (c *Conn) NextStanza() (Stanza, error) {
+	stanza, ok := <-c.stanzas
+	if !ok {
+		return nil, io.EOF
+	}
+
+	go func() {
+		xeps := c.extensions.list()
+		newStanzas := make([]taggedStanza, 0)
+		for _, xep := range xeps {
+			if stanza.sender.name == xep.name || stanza.err != nil {
+				continue
+			}
+
+			stanzas, err := xep.xep.Process(stanza.stanza)
+			if len(stanzas) == 0 && err != nil {
+				stanzas = []Stanza{nil}
+			}
+
+			for _, stanza := range stanzas {
+				ts := taggedStanza{stanza, err, xep}
+				newStanzas = append(newStanzas, ts)
+
+			}
+		}
+		for _, newStanza := range newStanzas {
+			c.stanzas <- newStanza
+		}
+	}()
+	return stanza.stanza, stanza.err
 }
 
 // TODO consider adding an ErrorReply interface that is optional to

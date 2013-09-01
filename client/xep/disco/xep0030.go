@@ -4,14 +4,12 @@ import (
 	"honnef.co/go/xmpp/client/core"
 
 	"encoding/xml"
-	"honnef.co/go/xmpp/shared/xep"
 	"sync"
 )
 
 type Conn struct {
 	core.Client
 	sync.RWMutex
-	stanzas    chan core.Stanza
 	identities []Identity
 	features   []Feature
 }
@@ -20,16 +18,12 @@ func init() {
 	core.RegisterXEP("disco", wrap)
 }
 
-func wrap(c core.Client) (xep.Interface, error) {
+func wrap(c core.Client) (core.XEP, error) {
 	conn := &Conn{
-		Client:  c,
-		stanzas: make(chan core.Stanza, 100),
+		Client: c,
 	}
 
 	conn.AddFeature("http://jabber.org/protocol/disco#info")
-
-	c.SubscribeStanzas(conn.stanzas)
-	go conn.read()
 
 	return conn, nil
 }
@@ -46,25 +40,25 @@ func (c *Conn) AddFeature(f string) {
 	c.Unlock()
 }
 
-func (c *Conn) read() {
+func (c *Conn) Process(stanza core.Stanza) ([]core.Stanza, error) {
 	// TODO support queries for items/item nodes
-	for stanza := range c.stanzas {
-		if iq, ok := stanza.(*core.IQ); ok {
-			if iq.Query.Space == "http://jabber.org/protocol/disco#info" && iq.Type == "get" {
-				// TODO support queries targetted at nodes
-				c.RLock()
-				c.SendIQReply(iq, "result", struct {
-					XMLName    xml.Name   `xml:"http://jabber.org/protocol/disco#info query"`
-					Identities []Identity `xml:"identity"`
-					Features   []Feature  `xml:"feature"`
-				}{
-					Identities: c.identities,
-					Features:   c.features,
-				})
-				c.RUnlock()
-			}
+	if iq, ok := stanza.(*core.IQ); ok {
+		if iq.Query.Space == "http://jabber.org/protocol/disco#info" && iq.Type == "get" {
+			// TODO support queries targetted at nodes
+			c.RLock()
+			c.SendIQReply(iq, "result", struct {
+				XMLName    xml.Name   `xml:"http://jabber.org/protocol/disco#info query"`
+				Identities []Identity `xml:"identity"`
+				Features   []Feature  `xml:"feature"`
+			}{
+				Identities: c.identities,
+				Features:   c.features,
+			})
+			c.RUnlock()
 		}
 	}
+
+	return nil, nil
 }
 
 type Info struct {

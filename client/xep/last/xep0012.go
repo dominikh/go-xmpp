@@ -12,12 +12,10 @@ import (
 	"encoding/xml"
 	"honnef.co/go/xmpp/client/core"
 	"honnef.co/go/xmpp/client/xep/disco"
-	"honnef.co/go/xmpp/shared/xep"
 )
 
 type Conn struct {
 	core.Client
-	stanzas chan core.Stanza
 }
 
 type LastActivityRequest struct {
@@ -29,29 +27,25 @@ func init() {
 	core.RegisterXEP("last", wrap, "disco")
 }
 
-func wrap(c core.Client) (xep.Interface, error) {
+func wrap(c core.Client) (core.XEP, error) {
 	conn := &Conn{
-		Client:  c,
-		stanzas: make(chan core.Stanza, 100),
+		Client: c,
 	}
 
 	discovery := conn.MustGetXEP("disco").(*disco.Conn)
 	discovery.AddFeature("jabber:iq:last")
 
-	c.SubscribeStanzas(conn.stanzas)
-	go conn.read()
-
 	return conn, nil
 }
 
-func (c *Conn) read() {
-	for stanza := range c.stanzas {
-		if iq, ok := stanza.(*core.IQ); ok {
-			if iq.Query.Space == "jabber:iq:last" && iq.Type == "get" {
-				c.EmitStanza(&LastActivityRequest{iq, c})
-			}
+func (c *Conn) Process(stanza core.Stanza) ([]core.Stanza, error) {
+	if iq, ok := stanza.(*core.IQ); ok {
+		if iq.Query.Space == "jabber:iq:last" && iq.Type == "get" {
+			return []core.Stanza{&LastActivityRequest{iq, c}}, nil
 		}
 	}
+
+	return nil, nil
 }
 
 // Reply replies to the Last Activity query.
